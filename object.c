@@ -64,8 +64,8 @@ ObjString* copyString(const char* chars, int length) {
     ObjString* interned = tableFindString(&vm.strings, chars, length, hash);
     //if interned we just return the reference
     if (interned != NULL) return interned;
-    
-    char* heapChars = ALLOCATE(char, length + 1); 
+
+    char* heapChars = ALLOCATE(char, length + 1);
     memcpy(heapChars, chars, length);
     heapChars[length] = '\0';
 
@@ -80,4 +80,4 @@ void printObject(Value value) {
             printf("%s", AS_CSTRING(value));
             break;
     }
-} 
+}

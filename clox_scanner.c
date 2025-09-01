@@ -2,13 +2,15 @@
 #include <string.h>
 #include "common.h"
 #include "clox_scanner.h"
-
+#include "table.h"
 Scanner scanner;
 
 
 void initScanner(const char* source) {
     scanner.start = source;
     scanner.current = source;
+    scanner.isInInterpolation = false;
+    scanner.scannedInterpEnd = false;
     scanner.line = 1;
 }
 
@@ -69,21 +71,21 @@ static void skipWhitespace() {
                 scanner.line++;
                 advance();
                 break;
-            case '/': 
+            case '/':
                 if(*(peek() + 1) == '/') {
 
-                    while (*peek() != '\n' && !isAtEnd()) advance(); 
+                    while (*peek() != '\n' && !isAtEnd()) advance();
 
                 } else if (*(peek() + 1) == '*') {
 
                     while (*peek() != '*' && *(peek() + 1) != '/' && !isAtEnd()) advance();
-        
+
                 } else {
                     return;
                 }
                 break;
 
-            default: return; 
+            default: return;
         }
     }
 }
@@ -100,14 +102,24 @@ static bool isAlpha(char c) {
 
 static Token string() {
 
+
     while (*peek() != '"' && !isAtEnd()) {
 
-        if (*peek() == '\n') { 
+        if (*peek() == '$' && *(peek() + 1)) {
+
+            char lastChar = *(peek() - 1);
+            printf("Last char is: '%c'\n", lastChar);
+            scanner.isInInterpolation = true;
+            return makeToken(TOKEN_STRING_WITH_INTERP);
+        }
+
+        if (*peek() == '\n') {
             scanner.line++;
         }
 
-        advance(); 
+        advance();
     }
+
 
     if (isAtEnd()) return errorToken("Unterminated string.");
 
@@ -137,35 +149,38 @@ static TokenType checkKeyword(int start, int charLeft, const char* keyChar, Toke
     return TOKEN_IDENTIFIER;
 }
 
+
+Token scanToken();
+
 static TokenType identifierType() {
 
     switch (scanner.start[0]) {
         case 'a': return checkKeyword(1, 2, "nd", TOKEN_AND);
         case 'b': return checkKeyword(1, 4, "reak", TOKEN_BREAK);
-        case 'c': 
+        case 'c':
             if (scanner.current - scanner.start > 1) {
                 switch (scanner.start[1]) {
                     case 'l': return checkKeyword(2, 4, "lass", TOKEN_CLASS);
-                    case 'o': 
+                    case 'o':
                         if (scanner.current - scanner.start > 2) {
                             switch (scanner.start[2]) {
-                                case 'n': 
+                                case 'n':
                                     if (scanner.current - scanner.start > 3) {
                                         switch(scanner.start[3]) {
                                             case 's': return checkKeyword(3, 2, "st", TOKEN_CONST);
                                             case 't': return checkKeyword(3, 5, "tinue", TOKEN_CONTINUE);
                                         }
-                                    }      
-                                 
-                            }   
+                                    }
+
+                            }
                     }
                 }
             }
             break;
-            
+
         case 'e': return checkKeyword(1, 3, "lse", TOKEN_ELSE);
         case 'i': return checkKeyword(1, 1, "f", TOKEN_IF);
-        case 'f' : 
+        case 'f' :
             if (scanner.current - scanner.start > 1) {
                 switch (scanner.start[1]) {
                     case 'a': return checkKeyword(2, 4, "alse", TOKEN_FALSE);
@@ -188,7 +203,7 @@ static TokenType identifierType() {
                 }
             }
             break;
-            
+
         case 'v': return checkKeyword(1, 2, "ar", TOKEN_VAR);
         case 'w': return checkKeyword(1, 4, "hile", TOKEN_WHILE);
     }
@@ -206,22 +221,48 @@ static Token identifier() {
 
 Token scanToken() {
 
+    const char* savedCurrent = scanner.current;
+
     skipWhitespace();
 
     scanner.start = scanner.current;
 
-    if(isAtEnd()) return makeToken(TOKEN_EOF);
+    if (isAtEnd()) return makeToken(TOKEN_EOF);
 
     char c = advance();
 
-    if(isDigit(c)) return number();
-    if(isAlpha(c)) return identifier();
+    if (scanner.scannedInterpEnd) {
+        scanner.scannedInterpEnd = false;
+
+        if (c == '"') {
+            c = advance();
+        } else {
+            //scanner.current is now 2 characters after '}', the end of the
+            //string interpolation (when '}' is scanned, current points to the char after it, so when the next char is scanned
+            //it will be 2 after). We want it scanner.start point to the character after the interp end, thus scanner.current--.
+            scanner.current--;
+            scanner.start = scanner.current;
+            return string();
+        }
+    }
+
+    if (isDigit(c)) return number();
+    if (isAlpha(c)) return identifier();
+
+
 
     switch (c) {
         case '(': return makeToken(TOKEN_LEFT_PAREN);
         case ')': return makeToken(TOKEN_RIGHT_PAREN);
         case '{': return makeToken(TOKEN_LEFT_BRACE);
-        case '}': return makeToken(TOKEN_RIGHT_BRACE);
+         case '}': {
+            if (scanner.isInInterpolation) {
+                scanner.isInInterpolation = false;
+                scanner.scannedInterpEnd = true;
+                return makeToken(TOKEN_SEMICOLON);
+
+            } else return makeToken(TOKEN_RIGHT_BRACE);
+        }
         case ';': return makeToken(TOKEN_SEMICOLON);
         case ',': return makeToken(TOKEN_COMMA);
         case '.': return makeToken(TOKEN_DOT);
@@ -234,6 +275,7 @@ Token scanToken() {
         case '<': return makeToken(checkMatch('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS);
         case '>': return makeToken(checkMatch('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER);
         case '"': return string();
+        case '$': return makeToken(checkMatch('{') ? TOKEN_STRING_INTERP_START : TOKEN_ERROR);
     }
 
 }

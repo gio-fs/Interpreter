@@ -8,19 +8,20 @@ typedef struct {
     Token current;
     bool hadError;
     bool panicMode;
+
 } Parser;
 
  typedef enum {
     PREC_NONE,
-    PREC_ASSIGNMENT,  
-    PREC_OR,          
-    PREC_AND,         
-    PREC_EQUALITY,    
-    PREC_COMPARISON, 
-    PREC_TERM,        
-    PREC_FACTOR,      
-    PREC_UNARY,       
-    PREC_CALL,        
+    PREC_ASSIGNMENT,
+    PREC_OR,
+    PREC_AND,
+    PREC_EQUALITY,
+    PREC_COMPARISON,
+    PREC_TERM,
+    PREC_FACTOR,
+    PREC_UNARY,
+    PREC_CALL,
     PREC_PRIMARY
  } Precedence;
 
@@ -42,8 +43,6 @@ typedef struct {
     Local locals[UINT8_COUNT];
     int localCount;
     int scopeDepth;
-
-    Table constGlobals;
 } Compiler;
 
 typedef struct {
@@ -52,6 +51,7 @@ typedef struct {
     int depth;
 } BreakEntries;
 
+extern Parser parser;
 
 bool compile(const char* source, Chunk* chunk);
 

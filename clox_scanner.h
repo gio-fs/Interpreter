@@ -15,7 +15,7 @@ typedef enum {
     TOKEN_LESS, TOKEN_LESS_EQUAL,
     TOKEN_TERNARY,
     // Literals.
-    TOKEN_IDENTIFIER, TOKEN_STRING, TOKEN_NUMBER, TOKEN_STRING_INTERPOLATION,
+    TOKEN_IDENTIFIER, TOKEN_STRING, TOKEN_NUMBER, TOKEN_STRING_WITH_INTERP, TOKEN_STRING_INTERP_START,
     // Keywords.
     TOKEN_AND, TOKEN_CLASS, TOKEN_ELSE, TOKEN_FALSE,
     TOKEN_FOR, TOKEN_FUNC, TOKEN_IF, TOKEN_NIL, TOKEN_OR,
@@ -24,6 +24,7 @@ typedef enum {
     TOKEN_CONTINUE, TOKEN_SWITCH, TOKEN_BREAK,
 
     TOKEN_ERROR,
+    NULL_TOKEN,
     TOKEN_EOF
 
 } TokenType;
@@ -39,7 +40,10 @@ typedef struct {
     const char* start;
     const char* current;
     int line;
+    bool isInInterpolation;
+    bool scannedInterpEnd;
 } Scanner;
+
 
 
 

@@ -31,7 +31,7 @@ static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
                 return tombstone = NULL ? tombstone : entry;
             }
             else {
-                //we found a tombstone. If tombstone is NULL, now it points 
+                //we found a tombstone. If tombstone is NULL, now it points
                 //to the entry and we continue the for loop
                 if (tombstone == NULL) tombstone = entry;
             }
@@ -51,8 +51,8 @@ static void adjustCapacity(Table* table, int capacity) {
         entries[i].value = NIL_VAL;
     }
 
-    //since the table's capacity gets changed, we have to adjust the entries 
-    //of the table to their new corresponding bucket. The first time 
+    //since the table's capacity gets changed, we have to adjust the entries
+    //of the table to their new corresponding bucket. The first time
     //table->capacity is 0 so the cycle doesn't start
 
     table->count = 0;
@@ -104,10 +104,10 @@ bool tableDelete(Table* table, ObjString* key) {
     // Find the entry.
     Entry* entry = findEntry(table->entries, table->capacity, key);
     if (entry->key == NULL) return false;
-    
+
     // Place a tombstone in the entry.
     entry->key = NULL;
-    entry->value = BOOL_VAL(true);  
+    entry->value = BOOL_VAL(true);
     return true;
 }
 
@@ -124,7 +124,7 @@ bool tableGet(Table* table, ObjString* key, Value* value) {
 ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t hash) {
 
     if (table->count == 0) return NULL;
-    
+
     uint32_t index = hash % table->capacity;
 
     for(;;) {
@@ -132,7 +132,7 @@ ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t
         Entry* entry = &table->entries[index];
 
         if (entry->key == NULL) {
-            
+
             if(IS_NIL(entry->value)) return NULL;
 
         } else if (entry->key->length == length && entry->key->hash == hash && memcmp(entry->key->chars, chars, length) == 0) {

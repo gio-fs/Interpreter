@@ -47,9 +47,9 @@ static int jumpInstruction(const char* name, int sign, Chunk* chunk, int offset)
 int getLine(Chunk* chunk, int index) {
 
     int count = 0;
-    
+
     for(int i=0; i<chunk->linesLength; i++) {
-        
+
         count += chunk->lines[i].offsetCount;
 
         if (index < count) {
@@ -92,7 +92,7 @@ int disassembleInstruction(Chunk* chunk, int offset) {
         case OP_LOOP:
             return jumpInstruction("OP_LOOP", -1, chunk, offset);
         case OP_GET_LOCAL:
-            return byteInstruction("OP_GET_LOCAL", chunk, offset);    
+            return byteInstruction("OP_GET_LOCAL", chunk, offset);
         case OP_GET_GLOBAL:
             return constantInstruction("OP_GET_GLOBAL", chunk, offset);
         case OP_GET_GLOBAL_LONG:

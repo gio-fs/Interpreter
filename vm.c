@@ -51,7 +51,7 @@ static void checkCapacity() {
 }
 
 void initVM() {
-    
+
     vm.stack.count = 0;
     vm.stack.capacity = 256;
     vm.stack.values = NULL;
@@ -85,10 +85,41 @@ static bool isFalsey(Value value) {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
+static ObjString* valueToString(Value value) {
+    if (IS_STRING(value)) {
+        return AS_STRING(value);
+
+    } else if (IS_NUMBER(value)) {
+        double num = AS_NUMBER(value);
+        char buffer[40];
+
+        // snprintf copies char to buffer with a specific format
+        if (num == (int)num) {
+            snprintf(buffer, sizeof(buffer), "%.0f", num);
+        } else {
+            snprintf(buffer, sizeof(buffer), "%g", num);
+        }
+
+        return copyString(buffer, strlen(buffer));
+
+    } else if (IS_BOOL(value)) {
+        const char* boolStr = AS_BOOL(value) ? "true" : "false";
+        return copyString(boolStr, strlen(boolStr));
+
+    } else if (IS_NIL(value)) {
+        return copyString("nil", 3);
+    }
+
+    //temporary fallback for other obj types
+    return copyString("<object>", 8);
+}
+
 static void concatenate() {
 
-    ObjString* b = AS_STRING(pop());
-    ObjString* a = AS_STRING(pop());
+    ObjString* b = valueToString(pop());
+    ObjString* a = valueToString(pop());
+
+    if (b->chars[0] == ' ') b->length = 1;
 
     int length = a->length + b->length;
     char* newString = ALLOCATE(char, length + 1);
@@ -100,7 +131,7 @@ static void concatenate() {
     //the string object (result) itself is in the heap, and it's chars field points
     //to the same memory location of temp, thus taking the ownership of the memory.
     //Now temp doesn't have anymore the responsibility of freeing that memory
-    //and will be handled by the GC when result will be freed. The actual array of characters 
+    //and will be handled by the GC when result will be freed. The actual array of characters
     //never changes place, only the ownership switches between temp and result
 
     ObjString* result = takeString(newString, length);
@@ -108,7 +139,7 @@ static void concatenate() {
 
 }
 
-static InterpretResult run() {   
+static InterpretResult run() {
 
     #define READ_BYTE() (*vm.ip++)
     #define READ_WORD() (vm.ip += 2, (uint16_t)(vm.ip[-2] << 8| vm.ip[-1]))
@@ -124,7 +155,7 @@ static InterpretResult run() {
             double b = AS_NUMBER(pop());\
             double a = AS_NUMBER(pop());\
             push(valueType(a op b));\
-        } while(0) 
+        } while(0)
 
     for (;;) {
 
@@ -142,7 +173,7 @@ static InterpretResult run() {
 
         checkCapacity();
         uint8_t instruction = READ_BYTE();
-        
+
         switch (instruction) {
             case OP_CONSTANT: {
                 Value constant = READ_CONSTANT();
@@ -151,19 +182,19 @@ static InterpretResult run() {
             }
             case OP_CONSTANT_LONG: {
                 uint32_t longIndex = (READ_BYTE() | READ_BYTE() << 8 | READ_BYTE() << 16); //longIndex is 3 bytes
-                Value constantLong = vm.chunk->constants.values[longIndex];  
+                Value constantLong = vm.chunk->constants.values[longIndex];
                 push(constantLong);
                 break;
             }
-            case OP_NIL: 
+            case OP_NIL:
                 push(NIL_VAL); break;
-            case OP_TRUE: 
-                push(BOOL_VAL(true)); 
+            case OP_TRUE:
+                push(BOOL_VAL(true));
                 break;
-            case OP_FALSE: 
-                push(BOOL_VAL(false)); 
+            case OP_FALSE:
+                push(BOOL_VAL(false));
                 break;
-            case OP_POP: 
+            case OP_POP:
                 pop();
                 break;
             case OP_JUMP: {
@@ -257,6 +288,7 @@ static InterpretResult run() {
                 //other bytecode instructions only look for stackTop - 1
                 uint8_t slot = READ_BYTE();
                 vm.stack.values[slot] = peek(0);
+
                 break;
             }
             case OP_SET_GLOBAL: {
@@ -293,26 +325,26 @@ static InterpretResult run() {
                 break;
             }
             case OP_ADD: {
-                if (IS_STRING(peek(0)) && IS_STRING(peek(1))) {
+                if ((IS_NUMBER(peek(0)) && IS_STRING(peek(1))) || (IS_STRING(peek(0)) && IS_NUMBER(peek(1))) || (IS_STRING(peek(0)) && IS_STRING(peek(1)))) {
                     concatenate();
                 } else if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
                     double b = AS_NUMBER(pop());
                     double a = AS_NUMBER(pop());
                     push(NUMBER_VAL(a + b));
-                } else {
+                } /*else {
                     runtimeError("Operands must be both numbers or strings.");
                     return INTERPRET_RUNTIME_ERROR;
-                }
+                }*/
                 break;
             }
-            case OP_SUBTRACT: 
-                BINARY_OP(NUMBER_VAL, -); 
+            case OP_SUBTRACT:
+                BINARY_OP(NUMBER_VAL, -);
                 break;
-            case OP_MULTIPLY: 
-                BINARY_OP(NUMBER_VAL, *); 
+            case OP_MULTIPLY:
+                BINARY_OP(NUMBER_VAL, *);
                 break;
-            case OP_DIVIDE: 
-                BINARY_OP(NUMBER_VAL, /); 
+            case OP_DIVIDE:
+                BINARY_OP(NUMBER_VAL, /);
                 break;
             case OP_NOT:
                 push(BOOL_VAL(isFalsey(pop())));
@@ -330,13 +362,13 @@ static InterpretResult run() {
                 break;
             case OP_GREATER:
                 BINARY_OP(BOOL_VAL, >);
-                break;  
+                break;
             case OP_PRINT:
                 printValue(pop());
                 printf("\n");
                 break;
-            case OP_RETURN: 
-          
+            case OP_RETURN:
+
                 return INTERPRET_OK;
         }
     }
@@ -350,7 +382,7 @@ static InterpretResult run() {
 
 
 InterpretResult interpret(const char* source) {
-    
+
     Chunk chunk;
     initChunk(&chunk);
 

@@ -22,7 +22,7 @@ typedef struct {
 } Value;
 
 typedef struct {
-    int capacity; 
+    int capacity;
     int count;
     Value* values;
 } ValueArray;
