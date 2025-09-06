@@ -18,6 +18,57 @@ Obj* allocateObject(size_t size, ObjType type) {
     return obj;
 }
 
+ObjFunction* newFunction() {
+    ObjFunction* function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
+
+    function->arity = 0;
+    function->name = NULL;
+    initChunk(&function->chunk);
+    return function;
+}
+
+ObjArray* newArray(ValueType type) {
+    ObjArray* arr = ALLOCATE_OBJ(ObjArray, OBJ_ARRAY);
+
+    arr->type = type;
+    arr->values.values = NULL;
+    arr->values.count = 0;
+    arr->values.capacity = 0;
+    return arr;
+}
+
+bool append(ObjArray* arr, Value value) {
+    if (value.type != arr->type) {
+        // error, vm handles this
+        return false;
+    }
+
+    writeValueArray(&arr->values, value);
+    return true;
+}
+
+bool set(ObjArray* arr, int index, Value value) {
+    if ( index < 0 || index >= arr->values.count || value.type != arr->type) {
+        return false;
+    }
+
+    arr->values.values[index] = value;
+    return true;
+}
+
+Value get(ObjArray* arr, int index) {
+    if (index < 0 || index >= arr->values.count) runtimeError("Index out of bounds");
+
+    return arr->values.values[index];
+
+}
+
+ObjNative* newNative(NativeFn function) {
+    ObjNative* native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
+    native->function = function;
+    return native;
+}
+
 //FNV-1a non-criptographic hash algorithm
 uint32_t hashString(const char* chars, int length) {
     uint32_t hash = 2166136261;
@@ -72,12 +123,35 @@ ObjString* copyString(const char* chars, int length) {
     return allocateString(heapChars, length, hash);
 }
 
-
+static void printFunction(ObjFunction* function) {
+    if (function->name == NULL) {
+        printf("<script>");
+        
+        return;
+    }
+    printf("<fn %s>", function->name->chars);
+}
 
 void printObject(Value value) {
     switch(OBJ_TYPE(value)) {
-        case OBJ_STRING:
+        case OBJ_FUNCTION: {
+            printf("%s", AS_FUNCTION(value));
+            break;
+        }
+        case OBJ_STRING: {
             printf("%s", AS_CSTRING(value));
             break;
+        }
+        case OBJ_NATIVE: {
+            printf("<native func>");
+            break;
+        }
+        case OBJ_ARRAY: {
+            ObjString* arrType = valueTypeToString(AS_ARRAY(value)->type);
+            printf("< %s array>", arrType->chars);
+            break;
+        }
+
+             
     }
 }

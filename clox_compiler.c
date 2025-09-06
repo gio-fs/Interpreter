@@ -8,7 +8,6 @@
 #include "clox_compiler.h"
 #include "clox_scanner.h"
 
-
 Parser parser;
 
 Compiler* current = NULL;
@@ -17,64 +16,91 @@ Chunk* compilingChunk;
 
 static void grouping(bool canAssign);
 static void unary(bool canAssign);
- static void binary(bool canAssign);
- static void number(bool canAssign);
- static void literal(bool canAssign);
- static void string(bool canAssign);
- static void variable(bool canAssign);
- static void interp(bool canAssign);
- static void and_(bool canAssign);
- static void or_(bool canAssign);
+static void binary(bool canAssign);
+static void ternary(bool canAssign);
+static void number(bool canAssign);
+static void literal(bool canAssign);
+static void string(bool canAssign);
+static void variable(bool canAssign);
+static void interp(bool canAssign);
+static void and_(bool canAssign);
+static void or_(bool canAssign);
+static void call(bool canAssign);
+static void array(bool canAssign);
+static void indexing(bool canAssign);
 
 ParseRule rules[] = {
-    [TOKEN_LEFT_PAREN]    = {grouping,  NULL,       PREC_NONE},
-    [TOKEN_RIGHT_PAREN]   = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_LEFT_BRACE]    = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_RIGHT_BRACE]   = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_COMMA]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_DOT]           = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_MINUS]         = {unary,     binary,     PREC_TERM},
-    [TOKEN_PLUS]          = {NULL,      binary,     PREC_TERM},
-    [TOKEN_SEMICOLON]     = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_SLASH]         = {NULL,      binary,     PREC_FACTOR},
-    [TOKEN_STAR]          = {NULL,      binary,     PREC_FACTOR},
-    [TOKEN_BANG]          = {unary,     NULL,       PREC_NONE},
-    [TOKEN_BANG_EQUAL]    = {NULL,      binary,     PREC_EQUALITY},
-    [TOKEN_EQUAL]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_EQUAL_EQUAL]   = {NULL,      binary,     PREC_EQUALITY},
-    [TOKEN_GREATER]       = {NULL,      binary,     PREC_COMPARISON},
-    [TOKEN_GREATER_EQUAL] = {NULL,      binary,     PREC_COMPARISON},
-    [TOKEN_LESS]          = {NULL,      binary,     PREC_COMPARISON},
-    [TOKEN_LESS_EQUAL]    = {NULL,      binary,     PREC_COMPARISON},
-    [TOKEN_IDENTIFIER]    = {variable,  NULL,       PREC_NONE},
-    [TOKEN_STRING]        = {string,    NULL,       PREC_NONE},
-    [TOKEN_STRING_WITH_INTERP]        = {interp,    NULL,       PREC_NONE},
-    [TOKEN_STRING_INTERP_START]        = {NULL,    NULL,       PREC_NONE},
-    [TOKEN_NUMBER]        = {number,    NULL,       PREC_NONE},
-    [TOKEN_AND]           = {NULL,      and_,       PREC_AND},
-    [TOKEN_CLASS]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_ELSE]          = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_FALSE]         = {literal,   NULL,       PREC_NONE},
-    [TOKEN_FOR]           = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_FUNC]          = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_IF]            = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_NIL]           = {literal,   NULL,       PREC_NONE},
-    [TOKEN_OR]            = {NULL,      or_,        PREC_OR},
-    [TOKEN_PRINT]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_RETURN]        = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_SUPER]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_THIS]          = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_TRUE]          = {literal,   NULL,       PREC_NONE},
-    [TOKEN_VAR]           = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_WHILE]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_CONST]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_ERROR]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_EOF]           = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_LEFT_PAREN]          = {grouping,  call,       PREC_CALL},
+    [TOKEN_RIGHT_PAREN]         = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_LEFT_BRACE]          = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_RIGHT_BRACE]         = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_COMMA]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_DOT]                 = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_MINUS]               = {unary,     binary,     PREC_TERM},
+    [TOKEN_PLUS]                = {NULL,      binary,     PREC_TERM},
+    [TOKEN_SEMICOLON]           = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_SLASH]               = {NULL,      binary,     PREC_FACTOR},
+    [TOKEN_STAR]                = {NULL,      binary,     PREC_FACTOR},
+    [TOKEN_BANG]                = {unary,     NULL,       PREC_NONE},
+    [TOKEN_BANG_EQUAL]          = {NULL,      binary,     PREC_EQUALITY},
+    [TOKEN_EQUAL]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_EQUAL_EQUAL]         = {NULL,      binary,     PREC_EQUALITY},
+    [TOKEN_GREATER]             = {NULL,      binary,     PREC_COMPARISON},
+    [TOKEN_GREATER_EQUAL]       = {NULL,      binary,     PREC_COMPARISON},
+    [TOKEN_LESS]                = {NULL,      binary,     PREC_COMPARISON},
+    [TOKEN_LESS_EQUAL]          = {NULL,      binary,     PREC_COMPARISON},
+    [TOKEN_IDENTIFIER]          = {variable,  NULL,       PREC_NONE},
+    [TOKEN_STRING]              = {string,    NULL,       PREC_NONE},
+    [TOKEN_STRING_WITH_INTERP]  = {interp,    NULL,       PREC_NONE},
+    [TOKEN_STRING_INTERP_START] = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_NUMBER]              = {number,    NULL,       PREC_NONE},
+    [TOKEN_AND]                 = {NULL,      and_,       PREC_AND},
+    [TOKEN_CLASS]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_ELSE]                = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_FALSE]               = {literal,   NULL,       PREC_NONE},
+    [TOKEN_FOR]                 = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_FUNC]                = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_IF]                  = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_NIL]                 = {literal,   NULL,       PREC_NONE},
+    [TOKEN_OR]                  = {NULL,      or_,        PREC_OR},
+    [TOKEN_PRINT]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_RETURN]              = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_SUPER]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_THIS]                = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_TRUE]                = {literal,   NULL,       PREC_NONE},
+    [TOKEN_VAR]                 = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_WHILE]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_CONST]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_ERROR]               = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_EOF]                 = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_TERNARY]             = {NULL,      ternary,    PREC_TERNARY},
+    [TOKEN_LEFT_SQUARE_BRACE]   = {array,     NULL,       PREC_NONE}, 
+    [TOKEN_RIGHT_SQUARE_BRACE]  = {NULL,      NULL,       PREC_NONE},
+
 };
 
 
 Chunk* currentChunk() {
-    return compilingChunk;
+    return &current->function->chunk;
+}
+
+static void initCompiler(Compiler* compiler, FunctionType type) {
+    compiler->enclosing = current;
+    compiler->function = NULL;
+    compiler->type = type;
+    compiler->localCount = 0;
+    compiler->scopeDepth = 0;
+    compiler->function = newFunction();
+    current = compiler;
+
+    if (type != TYPE_SCRIPT) {
+        current->function->name = copyString(parser.previous.start, parser.previous.length);
+    }
+
+    Local* local = &current->locals[current->localCount++];
+    local->depth = 0;
+    local->name.start = "";
+    local->name.length = 0; 
 }
 
 static void errorAt(Token* token, const char* message) {
@@ -89,7 +115,7 @@ static void errorAt(Token* token, const char* message) {
     } else if (token->type == TOKEN_ERROR) {
 
     } else {
-        fprintf(stderr, "at '%.*s'\n", token->length, token->start);
+        fprintf(stderr, "at '%.*s'\t", token->length, token->start);
     }
 
     fprintf(stderr, ": %s\n", message);
@@ -130,7 +156,7 @@ static bool checkType(TokenType type) {
     return parser.current.type == type;
 }
 
-static bool checkMatch(TokenType type) {
+static bool match(TokenType type) {
     if (!checkType(type)) return false;
     advance();
     return true;
@@ -173,6 +199,12 @@ static void emitByte(uint8_t byte) {
 static void emitBytes(uint8_t byte1, uint8_t byte2) {
     emitByte(byte1);
     emitByte(byte2);
+}
+
+static void emitThreeBytes(uint8_t byte1, uint8_t byte2, uint8_t byte3) {
+    emitByte(byte1);
+    emitByte(byte2);
+    emitByte(byte3);
 }
 
 static void emitFourBytes(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t byte4) {
@@ -228,18 +260,21 @@ static void emitLoop(int loopStart) {
 }
 
 static void emitReturn() {
+    emitByte(OP_NIL);
     emitByte(OP_RETURN);
 }
 
-static void endCompiler() {
+static ObjFunction* endCompiler() {
     emitReturn();
+    ObjFunction* function = current->function;
 
 #ifdef DEBUG_PRINT_CODE
     if (!parser.hadError) {
-        disassembleChunk(currentChunk(), "code");
+        disassembleChunk(currentChunk(), function->name != NULL? function->name->chars : "<scrtipt>");
     }
 #endif
-
+    current = current->enclosing;
+    return function;
 }
 
 static void beginScope() {
@@ -318,6 +353,18 @@ static void binary(bool canAssign) {
 
 static void ternary(bool canAssign) {
 
+    int thenJump = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
+
+    parsePrecedence(PREC_TERNARY);
+    consume(TOKEN_COLON, "Expect ':' after the then branch");
+    
+    int elseJump = emitJump(OP_JUMP);
+    patchJump(thenJump);
+    emitByte(OP_POP);
+
+    parsePrecedence(PREC_TERNARY);
+    patchJump(elseJump);
 }
 
 static void number(bool canAssign) {
@@ -346,56 +393,140 @@ static void interp(bool canAssign) {
 
     do {
         consume(TOKEN_STRING_INTERP_START, "Expect '${'");
+
         expression();
+    
         consume(TOKEN_SEMICOLON, "Expect '}'");
 
         emitByte(OP_ADD);
 
-        if (checkMatch(TOKEN_STRING_WITH_INTERP)) {
+        if (match(TOKEN_STRING_WITH_INTERP)) {
+            // if a string is in the middle of two interpolations, the length is just 
+            // the number of the actual characters in the parser
             emitConstant(OBJ_VAL(copyString(parser.previous.start, parser.previous.length)));
             emitByte(OP_ADD);
 
-        } else if (checkMatch(TOKEN_STRING)) {
+        } else if (match(TOKEN_STRING)) {
+            // this means no more interpolations and we can break from the cycle
             emitConstant(OBJ_VAL(copyString(parser.previous.start, parser.previous.length - 1)));
             emitByte(OP_ADD);
             break;
 
         } else {
+            // 
             break;
         }
 
     } while (true);
 }
 
+
+
+static uint8_t argumentList() {
+    uint8_t argCount = 0;
+
+    if (!checkType(TOKEN_RIGHT_PAREN)) {
+        do {
+            expression();
+
+            if (argCount == 255) {
+                error("Max number of arguments is 255.");
+            }
+
+            argCount++;
+        } while (match(TOKEN_COMMA));
+    }
+
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after function arguments");
+    return argCount;
+}
+
+static void call(bool canAssign) {
+    uint8_t argCount = argumentList();
+    emitBytes(OP_CALL, argCount);
+}
+
 static void namedVariable(Token name, bool canAssign) {
 
     int arg = resolveLocal(current, &name);
+    
 
     if (arg != -1) {
-
-        if (canAssign && checkMatch(TOKEN_EQUAL)) {
+    
+        if (match(TOKEN_LEFT_SQUARE_BRACE)) {
+            expression();
+            consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+            
+            if (canAssign && match(TOKEN_EQUAL)) {
+                if (current->locals[arg].isConst) {
+                    error("Cannot assign to const variable.");
+                    return;
+                }
+                expression();
+                emitBytes(OP_SET_ARRAY_ELEMENT, (uint8_t)arg);
+            } else {
+                emitBytes(OP_GET_ARRAY_ELEMENT, (uint8_t)arg);
+            }
+            
+        } else if (canAssign && match(TOKEN_EQUAL)) {
+            
             if (current->locals[arg].isConst) {
                 error("Cannot assign to const variable.");
                 return;
             }
             expression();
             emitBytes(OP_SET_LOCAL, (uint8_t)arg);
+            
         } else {
             emitBytes(OP_GET_LOCAL, (uint8_t)arg);
         }
-    } else {
 
+    } else {
+        
         uint32_t globalIndex = identifierConstant(&name);
 
         if (globalIndex <= UINT8_MAX) {
-            if (canAssign && checkMatch(TOKEN_EQUAL)) {
+            if (match(TOKEN_LEFT_SQUARE_BRACE)) {
+                expression();
+                consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+            
+                if (canAssign && match(TOKEN_EQUAL)) {
+                    
+                    expression();
+                    emitBytes(OP_SET_ARRAY_GLOBAL_ELEMENT, (uint8_t)globalIndex);
+                } else {
+                    emitBytes(OP_GET_ARRAY_GLOBAL_ELEMENT, (uint8_t)globalIndex);
+                }   
+
+            } else if (canAssign && match(TOKEN_EQUAL)) {
                 expression();
                 emitBytes(OP_SET_GLOBAL, (uint8_t)globalIndex);
+
             } else {
                 emitBytes(OP_GET_GLOBAL, (uint8_t)globalIndex);
             }
         } else {
-            if (canAssign && checkMatch(TOKEN_EQUAL)) {
+            
+            if (match(TOKEN_LEFT_SQUARE_BRACE)) {
+                expression();
+                consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+            
+                if (canAssign && match(TOKEN_EQUAL)) {
+                    if (current->locals[arg].isConst) {
+                        error("Cannot assign to const variable.");
+                        return;
+                    }
+                    expression();
+                    emitFourBytes(OP_SET_ARRAY_GLOBAL_ELEMENT_LONG, (uint8_t)((globalIndex & 0x000000ff)),
+                                                                    (uint8_t)((globalIndex & 0x0000ff00) >> 8),
+                                                                    (uint8_t)((globalIndex & 0x00ff0000) >> 16));
+                } else {
+                    emitFourBytes(OP_GET_ARRAY_GLOBAL_ELEMENT_LONG, (uint8_t)((globalIndex & 0x000000ff)),
+                                                                    (uint8_t)((globalIndex & 0x0000ff00) >> 8),
+                                                                    (uint8_t)((globalIndex & 0x00ff0000) >> 16));
+                }   
+
+            } else if (canAssign && match(TOKEN_EQUAL)) {
                 expression();
                 emitFourBytes(OP_SET_GLOBAL_LONG,  (uint8_t)((globalIndex & 0x000000ff)),
                                                    (uint8_t)((globalIndex & 0x0000ff00) >> 8),
@@ -410,6 +541,7 @@ static void namedVariable(Token name, bool canAssign) {
         }
     }
 }
+ 
 
 static void variable(bool canAssign) {
     namedVariable(parser.previous, canAssign);
@@ -427,6 +559,7 @@ static void addLocal(Token name, bool isConst) {
 }
 
 static void markInitialized() {
+    if (current->scopeDepth ==  0) return;
     current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
@@ -486,10 +619,29 @@ static void defineVariable(uint32_t global, bool isConst) {
     }
 }
 
+static void array(bool canAssign) {
+    uint32_t elementsCount = 0;
+    if (!checkType(TOKEN_RIGHT_SQUARE_BRACE)) {
+        do {
+            expression();
+            elementsCount++;
+        } while (match(TOKEN_COMMA));
+    }
+        
+    consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
+
+    if (elementsCount < 256) emitBytes(OP_ARRAY, (uint8_t)elementsCount);
+    else emitFourBytes(OP_ARRAY_LONG, (uint8_t)((elementsCount & 0x000000ff)),
+                                      (uint8_t)((elementsCount & 0x0000ff00) >> 8),
+                                      (uint8_t)((elementsCount & 0x00ff0000) >> 16));
+}
+
+
+
 static void varDeclaration(bool isConst) {
     uint32_t global = parseVariable("Expect a variable name.", isConst);
 
-    if (checkMatch(TOKEN_EQUAL)) {
+    if (match(TOKEN_EQUAL)) {
         expression();
     } else {
         emitByte(OP_NIL);
@@ -497,9 +649,19 @@ static void varDeclaration(bool isConst) {
 
     consume(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
 
-
     defineVariable(global, isConst);
 
+}
+
+
+static void function();
+
+static void funDeclaration() {
+    // TOKEN_CONST makes sense only for variables, so we set the flag isConst to false 
+    uint8_t global = parseVariable("Expect function name.", false);
+    markInitialized();
+    function(TYPE_FUNCTION);
+    defineVariable(global, false);
 }
 
 static void and_(bool canAssign) {
@@ -525,6 +687,8 @@ static void or_(bool canAssign) {
     //else -> elseJump : parsePrecedence, return
 }
 
+
+
 ParseRule* getRule(TokenType type) {
     return &rules[type];
 }
@@ -549,7 +713,7 @@ static void parsePrecedence(Precedence precedence) {
         infixRule(canAssign);
     }
 
-    if (canAssign && checkMatch(TOKEN_EQUAL)) {
+    if (canAssign && match(TOKEN_EQUAL)) {
         error("Invalid assignement target.");
     }
 }
@@ -597,7 +761,7 @@ static void ifStatement(bool insideLoop, int loopStart, BreakEntries* breakEntri
     emitByte(OP_POP);
 
 
-    if (checkMatch(TOKEN_ELSE)) {
+    if (match(TOKEN_ELSE)) {
         if (insideLoop) {
             loopStatement(loopStart, breakEntries);
         } else {
@@ -646,12 +810,12 @@ static void forStatement() {
     consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
 
     // Initializer clause
-    if (checkMatch(TOKEN_SEMICOLON)) {
+    if (match(TOKEN_SEMICOLON)) {
         //nothing, skips to contition clause
-    } else if (checkMatch(TOKEN_CONST)) {
+    } else if (match(TOKEN_CONST)) {
         consume(TOKEN_VAR, "Expect 'var' after 'const'.");
         varDeclaration(true);
-    } else if (checkMatch(TOKEN_VAR)) {
+    } else if (match(TOKEN_VAR)) {
         varDeclaration(false);
     } else {
         expressionStatement();
@@ -662,7 +826,7 @@ static void forStatement() {
 
     // Condition clause
     int exitJump = -1;
-    if (!checkMatch(TOKEN_SEMICOLON)) {
+    if (!match(TOKEN_SEMICOLON)) {
 
         expression();
         consume(TOKEN_SEMICOLON, "Expect ';' after loop condition.");
@@ -673,7 +837,7 @@ static void forStatement() {
 
 
     // Increment clause
-    if (!checkMatch(TOKEN_RIGHT_PAREN)) {
+    if (!match(TOKEN_RIGHT_PAREN)) {
 
         int bodyJump = emitJump(OP_JUMP);
 
@@ -703,29 +867,40 @@ static void forStatement() {
     }
 
     endScope();
-
-
-
-
 }
 
-
+static void returnStatement() {
+    // if we're outside functions, it's an error to return from top-level lox function
+    if (current->type == TYPE_SCRIPT) {
+        error("Can't return from top-level function.");
+    }
+    
+    if (match(TOKEN_SEMICOLON)) {
+        emitReturn();
+    } else {
+        expression();
+        consume(TOKEN_SEMICOLON, "Expect ';' after return value");
+        emitByte(OP_RETURN);
+    }
+}
 
 static void block();
 static void loopBlock(int loopStart, BreakEntries* breakEntries);
 
 static void statement() {
 
-    if (checkMatch(TOKEN_PRINT)) {
+    if (match(TOKEN_PRINT)) {
         printStatement();
-    } else if(checkMatch(TOKEN_IF)) {
+    } else if (match(TOKEN_IF)) {
         //we're not inside a loop, so insideLoop false and we don't have a loopStart and break entries
         ifStatement(false, -1, NULL);
-    } else if(checkMatch(TOKEN_WHILE)) {
+    } else if (match(TOKEN_WHILE)) {
         whileStatement();
-    } else if(checkMatch(TOKEN_FOR)) {
+    } else if (match(TOKEN_FOR)) {
         forStatement();
-    }  else if (checkMatch(TOKEN_LEFT_BRACE)) {
+    } else if (match(TOKEN_RETURN)) {
+        returnStatement();
+    } else if (match(TOKEN_LEFT_BRACE)) {
         beginScope();
         block();
         endScope();
@@ -735,24 +910,26 @@ static void statement() {
 }
 
 static void loopStatement(int loopStart, BreakEntries* breakEntries) {
-    if (checkMatch(TOKEN_PRINT)) {
+    if (match(TOKEN_PRINT)) {
         printStatement();
-    } else if(checkMatch(TOKEN_IF)) {
+    } else if (match(TOKEN_IF)) {
         ifStatement(true, loopStart, breakEntries);
-    } else if(checkMatch(TOKEN_WHILE)) {
+    } else if (match(TOKEN_WHILE)) {
         whileStatement();
-    } else if(checkMatch(TOKEN_FOR)) {
+    } else if (match(TOKEN_FOR)) {
         forStatement();
-    } else if(checkMatch(TOKEN_CONTINUE)) {
+    } else if (match(TOKEN_RETURN)) {
+        returnStatement();
+    } else if (match(TOKEN_CONTINUE)) {
         consume(TOKEN_SEMICOLON, "Expect ';' after statement.");
         popLocalsAbove(breakEntries->depth);
         emitLoop(loopStart);
-    } else if(checkMatch(TOKEN_BREAK)) {
+    } else if (match(TOKEN_BREAK)) {
         consume(TOKEN_SEMICOLON, "Expect ';' after statement.");
         popLocalsAbove(breakEntries->depth);
         breakEntries->breakJumps[breakEntries->breakCount] = emitJump(OP_JUMP);
         breakEntries->breakCount++;
-    } else if (checkMatch(TOKEN_LEFT_BRACE)) {
+    } else if (match(TOKEN_LEFT_BRACE)) {
         beginScope();
         loopBlock(loopStart, breakEntries);
         endScope();
@@ -790,11 +967,12 @@ static void synchronize() {
 }
 
 static void declaration () {
-
-    if (checkMatch(TOKEN_CONST)) {
-        consume(TOKEN_VAR, "Expect variable after const.");
+    if (match(TOKEN_FUNC)) {
+        funDeclaration();
+    } else if (match(TOKEN_CONST)) {
+        consume(TOKEN_VAR, "Expect variable after 'const'.");
         varDeclaration(true);
-    } else if (checkMatch(TOKEN_VAR)) {
+    } else if (match(TOKEN_VAR)) {
         varDeclaration(false);
     } else {
         statement();
@@ -808,10 +986,10 @@ static void declaration () {
 
 static void loopDeclaration(int loopStart, BreakEntries* breakEntries) {
 
-    if (checkMatch(TOKEN_CONST)) {
+    if (match(TOKEN_CONST)) {
         consume(TOKEN_VAR, "Expect variable after const.");
         varDeclaration(true);
-    } else if (checkMatch(TOKEN_VAR)) {
+    } else if (match(TOKEN_VAR)) {
         varDeclaration(false);
     } else {
         loopStatement(loopStart, breakEntries);
@@ -840,30 +1018,51 @@ static void expression() {
     parsePrecedence(PREC_ASSIGNMENT);
 }
 
+static void function(FunctionType type) {
+    Compiler compiler;
+    initCompiler(&compiler, type);
+    beginScope();
 
+    // param list
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after function name");
+    if (!checkType(TOKEN_RIGHT_PAREN)) {
+        do {
+            current->function->arity++;
+            if (current->function->arity > 255) {
+                errorAtCurrent("Can't have more than 255 parameters.");
+            }
 
-static void initCompiler(Compiler* compiler) {
-    compiler->localCount = 0;
-    compiler->scopeDepth = 0;
-    current = compiler;
+            bool isConst = match(TOKEN_CONST);
+            uint8_t paramConstant = parseVariable("Expect parameter name.", isConst);
+            defineVariable(paramConstant, isConst);
+        } while (match(TOKEN_COMMA));
+    }
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after function parameters");
+
+    // body
+    consume(TOKEN_LEFT_BRACE, "Expect '{' before function body");
+    block();
+
+    // creating function object
+    ObjFunction* function = endCompiler();
+    emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
 }
 
-bool compile(const char* source, Chunk* chunk) {
+ObjFunction* compile(const char* source) {
     initScanner(source);
     Compiler compiler;
-    initCompiler(&compiler);
-    compilingChunk = chunk;
+    initCompiler(&compiler, TYPE_SCRIPT);
+    compilingChunk = currentChunk();
 
     parser.hadError = false;
     parser.panicMode = false;
 
     advance();
 
-    while (!checkMatch(TOKEN_EOF)) {
+    while (!match(TOKEN_EOF)) {
         declaration();
     }
 
-    endCompiler();
-    return !parser.hadError;
-
+    ObjFunction* function = endCompiler();
+    return parser.hadError ? NULL : function;
 }

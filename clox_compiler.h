@@ -8,12 +8,12 @@ typedef struct {
     Token current;
     bool hadError;
     bool panicMode;
-
 } Parser;
 
  typedef enum {
     PREC_NONE,
     PREC_ASSIGNMENT,
+    PREC_TERNARY,
     PREC_OR,
     PREC_AND,
     PREC_EQUALITY,
@@ -39,7 +39,16 @@ typedef struct {
     bool isConst;
 } Local;
 
-typedef struct {
+typedef enum {
+    TYPE_FUNCTION,
+    TYPE_SCRIPT
+} FunctionType;
+typedef struct Compiler {
+    // linked list to keep track of the compiler struct of each function
+    struct Compiler* enclosing;
+    ObjFunction* function;
+    FunctionType type;
+
     Local locals[UINT8_COUNT];
     int localCount;
     int scopeDepth;
@@ -51,8 +60,7 @@ typedef struct {
     int depth;
 } BreakEntries;
 
-extern Parser parser;
 
-bool compile(const char* source, Chunk* chunk);
+ObjFunction* compile(const char* source);
 
 #endif

@@ -105,10 +105,7 @@ static Token string() {
 
     while (*peek() != '"' && !isAtEnd()) {
 
-        if (*peek() == '$' && *(peek() + 1)) {
-
-            char lastChar = *(peek() - 1);
-            printf("Last char is: '%c'\n", lastChar);
+        if (*peek() == '$' && *(peek() + 1) == '{') {
             scanner.isInInterpolation = true;
             return makeToken(TOKEN_STRING_WITH_INTERP);
         }
@@ -183,7 +180,7 @@ static TokenType identifierType() {
         case 'f' :
             if (scanner.current - scanner.start > 1) {
                 switch (scanner.start[1]) {
-                    case 'a': return checkKeyword(2, 4, "alse", TOKEN_FALSE);
+                    case 'a': return checkKeyword(2, 3, "lse", TOKEN_FALSE);
                     case 'o': return checkKeyword(2, 1, "r", TOKEN_FOR);
                     case 'u': return checkKeyword(2, 2, "nc", TOKEN_FUNC);
                 }
@@ -252,6 +249,8 @@ Token scanToken() {
 
 
     switch (c) {
+        case '[': return makeToken(TOKEN_LEFT_SQUARE_BRACE);
+        case ']': return makeToken(TOKEN_RIGHT_SQUARE_BRACE);
         case '(': return makeToken(TOKEN_LEFT_PAREN);
         case ')': return makeToken(TOKEN_RIGHT_PAREN);
         case '{': return makeToken(TOKEN_LEFT_BRACE);
@@ -276,6 +275,8 @@ Token scanToken() {
         case '>': return makeToken(checkMatch('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER);
         case '"': return string();
         case '$': return makeToken(checkMatch('{') ? TOKEN_STRING_INTERP_START : TOKEN_ERROR);
-    }
+        case '?': return makeToken(TOKEN_TERNARY);
+        case ':': return makeToken(TOKEN_COLON);
 
+    }
 }

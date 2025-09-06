@@ -3,13 +3,13 @@
 #include "memory.h"
 
 void initChunk(Chunk* chunk) {
-
     chunk->capacity = 0;
     chunk->count = 0;
-    chunk->linesLength = 0;
-    chunk->linesCapacity = 0;
-    chunk->lines = NULL;
+    chunk->lineArray.count = 0;
+    chunk->lineArray.capacity = 0;
+    chunk->lineArray.lines = NULL;
     chunk->code = NULL;
+
     initValueArray(&chunk->constants);
 
 }
@@ -23,19 +23,19 @@ void writeChunk(Chunk* chunk, uint8_t byte, int line) {
 
         }
 
-    if (chunk->linesLength > 0 && chunk->lines[chunk->linesLength - 1].line == line) {
-        chunk->lines[chunk->linesLength-1].offsetCount++;
+    if (chunk->lineArray.count > 0 && chunk->lineArray.lines[chunk->lineArray.count - 1].line == line) {
+        chunk->lineArray.lines[chunk->lineArray.count - 1].offsetCount++;
     } else {
 
-        if (chunk->linesLength >= chunk->linesCapacity) {
-            int oldCapacity = chunk->linesCapacity;
-            chunk->linesCapacity = GROW_CAPACITY(oldCapacity);
-            chunk->lines = GROW_ARRAY(Line, chunk->lines, oldCapacity, chunk->linesCapacity);
+        if (chunk->lineArray.count >= chunk->lineArray.capacity) {
+            int oldCapacity = chunk->lineArray.capacity;
+            chunk->lineArray.capacity = GROW_CAPACITY(oldCapacity);
+            chunk->lineArray.lines = GROW_ARRAY(Line, chunk->lineArray.lines, oldCapacity, chunk->lineArray.capacity);
         }
 
-        chunk->lines[chunk->linesLength].line = line;
-        chunk->lines[chunk->linesLength].offsetCount = 1;
-        chunk->linesLength++;
+        chunk->lineArray.lines[chunk->lineArray.count].line = line;
+        chunk->lineArray.lines[chunk->lineArray.count].offsetCount = 1;
+        chunk->lineArray.count++;
     }
 
     chunk->code[chunk->count] = byte;

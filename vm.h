@@ -3,12 +3,25 @@
 #include "chunk.h"
 #include "table.h"
 #include "value.h"
+#include "object.h"
 
-#define STACK_MAX 256
+
 
 typedef struct {
-    Chunk* chunk;
+    ObjFunction* function;
     uint8_t* ip;
+    Value* slots;
+} CallFrame;
+
+typedef struct {
+    int capacity;
+    int count;
+    CallFrame* frames;
+} CallFrameArray;
+
+typedef struct {
+    CallFrameArray frameArray;
+
     ValueArray stack;
     Value* stackTop;
     Table strings;
@@ -29,7 +42,6 @@ extern VM vm;
 void initVM();
 void freeVM();
 InterpretResult interpret(const char* source);
-void push(Value value);
-Value pop();
-
+void runtimeError(const char* format, ...);
+ObjString* valueTypeToString(ValueType type);
 #endif

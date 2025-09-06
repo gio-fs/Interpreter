@@ -10,18 +10,17 @@ void initValueArray(ValueArray* arr) {
     arr->capacity = 0;
     arr->count = 0;
     arr->values = NULL;
-
 }
 
 void writeValueArray(ValueArray* arr,  Value value) {
-    if(arr->capacity < arr->count + 1) {
+    if (arr->capacity < arr->count + 1) {
         int oldCapacity = arr->capacity;
         arr->capacity = GROW_CAPACITY(oldCapacity);
         arr->values = GROW_ARRAY(Value, arr->values, oldCapacity, arr->capacity);
     }
 
     arr->values[arr->count] = value;
-    arr->count ++;
+    arr->count++;
 }
 
 
@@ -57,7 +56,7 @@ void printValue(Value value) {
             printf("nil");
             break;
         case VAL_NUMBER:
-            printf("%g", AS_NUMBER(value));
+            printf("%.15f", AS_NUMBER(value));
             break;
         case VAL_OBJ:
             printObject(value);

@@ -45,15 +45,15 @@ static int jumpInstruction(const char* name, int sign, Chunk* chunk, int offset)
 }
 
 int getLine(Chunk* chunk, int index) {
-
+    
     int count = 0;
 
-    for(int i=0; i<chunk->linesLength; i++) {
+    for(int i = 0; i < chunk->lineArray.count; i++) {
 
-        count += chunk->lines[i].offsetCount;
+        count += chunk->lineArray.lines[i].offsetCount;
 
         if (index < count) {
-            return chunk->lines[i].line;
+            return chunk->lineArray.lines[i].line;
         }
 
     }
@@ -105,6 +105,20 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return constantLongInstruction("OP_DEFINE_CONST_GLOBAL", chunk, offset);
         case OP_DEFINE_GLOBAL_LONG:
             return constantLongInstruction("OP_DEFINE_GLOBAL_LONG", chunk, offset);
+        case OP_ARRAY:
+            return byteInstruction("OP_ARRAY", chunk, offset);
+        case OP_ARRAY_LONG:
+            return constantLongInstruction("OP_ARRAY_LONG", chunk, offset);
+         case OP_GET_ARRAY_ELEMENT:
+            return byteInstruction("OP_GET_ARRAY_ELEMENT", chunk, offset);
+        case OP_SET_ARRAY_ELEMENT:
+            return byteInstruction("OP_SET_ARRAY_ELEMENT", chunk, offset);
+        case OP_GET_ARRAY_GLOBAL_ELEMENT:
+            return byteInstruction("OP_GET_ARRAY_GLOBAL_ELEMENT", chunk, offset);
+        case OP_SET_ARRAY_GLOBAL_ELEMENT:
+            return byteInstruction("OP_SET_ARRAY_GLOBAL_ELEMENT", chunk, offset);
+        case OP_CALL:
+            return byteInstruction("OP_CALL", chunk, offset);
         case OP_SET_LOCAL:
             return byteInstruction("OP_SET_LOCAL", chunk, offset);
         case OP_SET_GLOBAL:

@@ -25,6 +25,15 @@ typedef enum {
     OP_SET_LOCAL,
     OP_SET_GLOBAL,
     OP_SET_GLOBAL_LONG,
+    OP_CALL,
+    OP_ARRAY,
+    OP_ARRAY_LONG,
+    OP_GET_ARRAY_ELEMENT,
+    OP_SET_ARRAY_ELEMENT,
+    OP_GET_ARRAY_GLOBAL_ELEMENT,
+    OP_SET_ARRAY_GLOBAL_ELEMENT,
+    OP_GET_ARRAY_GLOBAL_ELEMENT_LONG,
+    OP_SET_ARRAY_GLOBAL_ELEMENT_LONG,
     OP_EQUAL,
     OP_GREATER,
     OP_LESS,
@@ -45,12 +54,15 @@ typedef struct {
 } Line;
 
 typedef struct {
+    int capacity;
+    int count;
+    Line* lines;
+} LineArray;
+typedef struct {
     int count;
     int capacity;
     uint8_t* code;
-    Line* lines;
-    int linesLength;
-    int linesCapacity;
+    LineArray lineArray;
     ValueArray constants;
 } Chunk;
 
