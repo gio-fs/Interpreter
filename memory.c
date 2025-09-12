@@ -27,12 +27,25 @@ void freeObject(Obj* obj) {
             FREE(ObjString, obj);
             break;     
         }
+        case OBJ_ARRAY: {
+            ObjArray* arr = (ObjArray*)obj;
+            FREE(ObjArray, obj);
+            break;     
+        }
         case OBJ_NATIVE: {
             FREE(ObjNative, obj);
             break;     
         }
-        
-            
+        case OBJ_CLOSURE: {
+            ObjClosure* closure = (ObjClosure*)obj;
+            FREE(ObjClosure, obj);
+            break;     
+        }
+        case OBJ_UPVALUE: {
+            ObjUpvalue* upvalue = (ObjUpvalue*)obj;
+            FREE(ObjUpvalue, obj);
+            break;     
+        }
     }
 }
 

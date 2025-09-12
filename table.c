@@ -52,8 +52,7 @@ static void adjustCapacity(Table* table, int capacity) {
     }
 
     //since the table's capacity gets changed, we have to adjust the entries
-    //of the table to their new corresponding bucket. The first time
-    //table->capacity is 0 so the cycle doesn't start
+    //of the table to their new corresponding bucket.
 
     table->count = 0;
     for (int i = 0; i < table->capacity; i++) {
@@ -130,7 +129,6 @@ ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t
     for(;;) {
 
         Entry* entry = &table->entries[index];
-
         if (entry->key == NULL) {
 
             if(IS_NIL(entry->value)) return NULL;

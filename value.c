@@ -56,7 +56,7 @@ void printValue(Value value) {
             printf("nil");
             break;
         case VAL_NUMBER:
-            printf("%.15f", AS_NUMBER(value));
+            printf("%g", AS_NUMBER(value));
             break;
         case VAL_OBJ:
             printObject(value);

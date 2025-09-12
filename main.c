@@ -8,7 +8,7 @@
 
 static void repl() {
 
-    char line[2048];
+    char line[4096];
 
     for(;;) {
 

@@ -22,6 +22,7 @@ ObjFunction* newFunction() {
     ObjFunction* function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
 
     function->arity = 0;
+    function->upvalueCount = 0;
     function->name = NULL;
     initChunk(&function->chunk);
     return function;
@@ -37,7 +38,7 @@ ObjArray* newArray(ValueType type) {
     return arr;
 }
 
-bool append(ObjArray* arr, Value value) {
+bool appendArray(ObjArray* arr, Value value) {
     if (value.type != arr->type) {
         // error, vm handles this
         return false;
@@ -47,7 +48,7 @@ bool append(ObjArray* arr, Value value) {
     return true;
 }
 
-bool set(ObjArray* arr, int index, Value value) {
+bool setArray(ObjArray* arr, int index, Value value) {
     if ( index < 0 || index >= arr->values.count || value.type != arr->type) {
         return false;
     }
@@ -56,10 +57,28 @@ bool set(ObjArray* arr, int index, Value value) {
     return true;
 }
 
-Value get(ObjArray* arr, int index) {
-    if (index < 0 || index >= arr->values.count) runtimeError("Index out of bounds");
+bool getArray(ObjArray* arr, int index, Value* value) {
+    if (index < 0 || index >= arr->values.count) {
+        return false;
+    }
 
-    return arr->values.values[index];
+    *value = arr->values.values[index];
+    return true;
+
+}
+
+ObjClosure* newClosure(ObjFunction* function) {
+    ObjClosure* closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
+    ObjUpvalue** upvalues = ALLOCATE(ObjUpvalue*, function->upvalueCount);
+    
+    for (int i = 0; i <= function->upvalueCount - 1; i++) {
+        upvalues[i] = NULL;
+    }
+
+    closure->upvalues = upvalues;
+    closure->upvalueCount = function->upvalueCount;
+    closure->function = function;
+    return closure;
 
 }
 
@@ -67,6 +86,20 @@ ObjNative* newNative(NativeFn function) {
     ObjNative* native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
     native->function = function;
     return native;
+}
+
+ObjUpvalue* newUpvalue(Value* slot) {
+    ObjUpvalue* upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
+    upvalue->location = slot;
+    upvalue->closed = NIL_VAL;
+    upvalue->next = NULL;
+    return upvalue;
+}
+
+ObjDictionary* newDictionary() {
+    ObjDictionary* dict = ALLOCATE_OBJ(ObjDictionary, OBJ_DICTIONARY);
+    initTable(&dict->map);
+    return dict;
 }
 
 //FNV-1a non-criptographic hash algorithm
@@ -113,7 +146,7 @@ ObjString* copyString(const char* chars, int length) {
     uint32_t hash = hashString(chars, length);
 
     ObjString* interned = tableFindString(&vm.strings, chars, length, hash);
-    //if interned we just return the reference
+    //if interned we just return the rerence
     if (interned != NULL) return interned;
 
     char* heapChars = ALLOCATE(char, length + 1);
@@ -148,7 +181,15 @@ void printObject(Value value) {
         }
         case OBJ_ARRAY: {
             ObjString* arrType = valueTypeToString(AS_ARRAY(value)->type);
-            printf("< %s array>", arrType->chars);
+            printf("<%s array>", arrType->chars);
+            break;
+        }
+        case OBJ_CLOSURE: {
+            printFunction(AS_CLOSURE(value)->function);
+            break;
+        }
+        case OBJ_UPVALUE: {
+            printf("upvalue");
             break;
         }
 

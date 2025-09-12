@@ -2,6 +2,7 @@
 
 #include "clox_debug.h"
 #include "value.h"
+#include "object.h"
 
 void disassembleChunk(Chunk* chunk, const char* name) {
     printf("== %s ==\n", name);
@@ -30,7 +31,10 @@ static int constantInstruction(const char* name, Chunk* chunk, int offset) {
 }
 
 static int constantLongInstruction(const char* name, Chunk* chunk, int offset) {
-    uint32_t constant = (chunk->code[offset+1]) | (chunk->code[offset+2] << 8) | (chunk->code[offset+3] << 16);
+    uint32_t constant = (chunk->code[offset + 1]) |
+                        (chunk->code[offset + 2] << 8) |
+                        (chunk->code[offset + 3] << 16);
+
     printf("%-16s %4d '", name, constant);
     printValue(chunk->constants.values[constant]);
     printf("' \n");
@@ -109,14 +113,50 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return byteInstruction("OP_ARRAY", chunk, offset);
         case OP_ARRAY_LONG:
             return constantLongInstruction("OP_ARRAY_LONG", chunk, offset);
-         case OP_GET_ARRAY_ELEMENT:
-            return byteInstruction("OP_GET_ARRAY_ELEMENT", chunk, offset);
-        case OP_SET_ARRAY_ELEMENT:
-            return byteInstruction("OP_SET_ARRAY_ELEMENT", chunk, offset);
-        case OP_GET_ARRAY_GLOBAL_ELEMENT:
-            return byteInstruction("OP_GET_ARRAY_GLOBAL_ELEMENT", chunk, offset);
-        case OP_SET_ARRAY_GLOBAL_ELEMENT:
-            return byteInstruction("OP_SET_ARRAY_GLOBAL_ELEMENT", chunk, offset);
+        case OP_MAP:
+            return byteInstruction("OP_MAP", chunk, offset);
+        case OP_MAP_LONG:
+            return constantLongInstruction("OP_MAP_LONG", chunk, offset);
+        case OP_CALL_LAMBDA:
+            return byteInstruction("OP_CALL_LAMBDA", chunk, offset);   
+        case OP_RET_FROM_LAMBDA:
+            return simpleInstruction("OP_RET_FROM_LAMBDA", offset);
+        case OP_GET_ARRAY:
+            return byteInstruction("OP_GET_ARRAY", chunk, offset);
+        case OP_SET_ARRAY:
+            return byteInstruction("OP_SET_ARRAY", chunk, offset);
+        case OP_GET_ARRAY_GLOBAL:
+            return byteInstruction("OP_GET_ARRAY_GLOBAL", chunk, offset);
+        case OP_SET_ARRAY_GLOBAL:
+            return byteInstruction("OP_SET_ARRAY_GLOBAL", chunk, offset);
+        case OP_GET_UPVALUE:
+            return byteInstruction("OP_GET_UPVALUE", chunk, offset);
+        case OP_SET_UPVALUE:
+            return byteInstruction("OP_SET_UPVALUE", chunk, offset);
+        case OP_GET_ARRAY_UPVALUE:
+            return byteInstruction("OP_GET_ARRAY_UPVALUE", chunk, offset);
+        case OP_SET_ARRAY_UPVALUE:
+            return byteInstruction("OP_SET_ARRAY_UPVALUE", chunk, offset);
+        case OP_CLOSE_UPVALUE:
+            return simpleInstruction("OP_CLOSE_UPVALUE", offset);
+        case OP_CLOSURE: {
+            offset++;
+            uint8_t constant = chunk->code[offset++];
+            printf("%-16s %4d ", "OP_CLOSURE", constant);
+            printValue(chunk->constants.values[constant]);
+            printf("\n");
+
+            ObjFunction* function = AS_FUNCTION(chunk->constants.values[constant]);
+            for (int j = 0; j < function->upvalueCount; j++) {
+                int isLocal = chunk->code[offset++];
+                int index = chunk->code[offset++];
+                printf("%04d      |                     %s %d\n",
+                        offset - 2, isLocal ? "local" : "upvalue", index);
+            }
+            return offset;
+        }
+        case OP_ARRAY_CALL:
+            return simpleInstruction("OP_ARRAY_CALL", offset);
         case OP_CALL:
             return byteInstruction("OP_CALL", chunk, offset);
         case OP_SET_LOCAL:

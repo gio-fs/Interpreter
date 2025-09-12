@@ -28,11 +28,13 @@ static void or_(bool canAssign);
 static void call(bool canAssign);
 static void array(bool canAssign);
 static void indexing(bool canAssign);
+static void dict(bool canAssign);
+static void lambda(bool canAssign);
 
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]          = {grouping,  call,       PREC_CALL},
     [TOKEN_RIGHT_PAREN]         = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_LEFT_BRACE]          = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_LEFT_BRACE]          = {dict,      NULL,       PREC_NONE},
     [TOKEN_RIGHT_BRACE]         = {NULL,      NULL,       PREC_NONE},
     [TOKEN_COMMA]               = {NULL,      NULL,       PREC_NONE},
     [TOKEN_DOT]                 = {NULL,      NULL,       PREC_NONE},
@@ -76,6 +78,7 @@ ParseRule rules[] = {
     [TOKEN_TERNARY]             = {NULL,      ternary,    PREC_TERNARY},
     [TOKEN_LEFT_SQUARE_BRACE]   = {array,     NULL,       PREC_NONE}, 
     [TOKEN_RIGHT_SQUARE_BRACE]  = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_LAMBDA]              = {lambda,    lambda,       PREC_NONE},
 
 };
 
@@ -100,6 +103,8 @@ static void initCompiler(Compiler* compiler, FunctionType type) {
     Local* local = &current->locals[current->localCount++];
     local->depth = 0;
     local->name.start = "";
+    local->isCaptured = false;
+    local->isConst = false;
     local->name.length = 0; 
 }
 
@@ -192,6 +197,68 @@ static int resolveLocal(Compiler* compiler, Token* name) {
     return -1;
 }
 
+static void addLocal(Token name, bool isConst) {
+    //we add the local to the current scope
+    Local* local = &current->locals[current->localCount++];
+    local->name = name;
+    //marked as uninitialized with depth = -1. Variable is "ready for use" after its
+    //initializer is compiled
+    local->depth = -1;
+    local->isConst = isConst;
+    local->isCaptured = false;
+}
+
+static int addUpvalue(Compiler* compiler, uint8_t index, bool isLocal) {
+    int upvalueCount = compiler->function->upvalueCount;
+
+    for (int i = 0; i < upvalueCount; i++) {
+        Upvalue* upvalue = &compiler->upvalues[i];
+        if (upvalue->index == index && upvalue->isLocal == isLocal) {
+            return i;
+        }
+    }
+
+    if (upvalueCount == UINT8_COUNT) {
+        error("too many upvalues in function");
+        return 0;
+    }
+
+    compiler->upvalues[upvalueCount].isLocal = isLocal;
+    compiler->upvalues[upvalueCount].index = index;
+    return compiler->function->upvalueCount++;
+}
+
+static int resolveUpvalue(Compiler* compiler, Token* name) {
+    if (compiler->enclosing == NULL) return -1;
+
+    int local = resolveLocal(compiler->enclosing, name);
+    if (local != -1) {
+        compiler->enclosing->locals[local].isCaptured = true;
+        return addUpvalue(compiler, (uint8_t)local, true);
+    }
+
+    // if upvalue isnt found in next enclosing function, recursion
+    // occurs until the upvalue is found. Each function returns its upvalue index 
+    // count and adds to its upvalues the index of the enclosing function. Recursion
+    // stops if resolveLocal of the enclosing function returns index != -1. If top 
+    // level is reached and resolveLocal returns -1, upvalue doesnt exist and 
+    // the first calling function returns -1, leading to global/global long.
+    int upvalue = resolveUpvalue(compiler->enclosing, name);
+    if (upvalue != -1) {
+        return addUpvalue(compiler, (uint8_t)upvalue, false);
+    }
+
+    return -1;
+}
+
+static void markInitialized() {
+    if (current->scopeDepth ==  0) return;
+    current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
+
+
+
 static void emitByte(uint8_t byte) {
     writeChunk(currentChunk(), byte, parser.previous.line);
 }
@@ -259,18 +326,19 @@ static void emitLoop(int loopStart) {
     emitByte(offset & 0xff);
 }
 
-static void emitReturn() {
+static void emitReturn(FunctionType type) {
+    if (type == TYPE_LAMBDA) return;
     emitByte(OP_NIL);
     emitByte(OP_RETURN);
 }
 
-static ObjFunction* endCompiler() {
-    emitReturn();
+static ObjFunction* endCompiler(FunctionType type) {
+    emitReturn(type);
     ObjFunction* function = current->function;
 
 #ifdef DEBUG_PRINT_CODE
     if (!parser.hadError) {
-        disassembleChunk(currentChunk(), function->name != NULL? function->name->chars : "<scrtipt>");
+        disassembleChunk(currentChunk(), function->name != NULL? function->name->chars : "<script>");
     }
 #endif
     current = current->enclosing;
@@ -283,10 +351,15 @@ static void beginScope() {
 
 static void endScope() {
     current->scopeDepth--;
-    while (current->localCount > 0 && current->locals[current->localCount - 1].depth > current->scopeDepth) {
-        emitByte(OP_POP);
+    while (current->localCount > 0 
+            && current->locals[current->localCount - 1].depth > current->scopeDepth) {
+        
+        current->locals[current->localCount - 1].isCaptured?  
+            emitByte(OP_CLOSE_UPVALUE) : emitByte(OP_POP);
+      
         current->localCount--;
     }
+
 
 }
 
@@ -393,9 +466,7 @@ static void interp(bool canAssign) {
 
     do {
         consume(TOKEN_STRING_INTERP_START, "Expect '${'");
-
         expression();
-    
         consume(TOKEN_SEMICOLON, "Expect '}'");
 
         emitByte(OP_ADD);
@@ -443,101 +514,81 @@ static uint8_t argumentList() {
 
 static void call(bool canAssign) {
     uint8_t argCount = argumentList();
+    
+    if (match(TOKEN_LEFT_SQUARE_BRACE)) {
+        expression();
+        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+    
+        emitBytes(OP_ARRAY_CALL, argCount);
+    }
+
     emitBytes(OP_CALL, argCount);
 }
 
 static void namedVariable(Token name, bool canAssign) {
 
     int arg = resolveLocal(current, &name);
-    
+    bool isArray = false;
+
+    OpCode getOp, setOp, setArrOp, getArrOp;
 
     if (arg != -1) {
-    
-        if (match(TOKEN_LEFT_SQUARE_BRACE)) {
-            expression();
-            consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
-            
-            if (canAssign && match(TOKEN_EQUAL)) {
-                if (current->locals[arg].isConst) {
-                    error("Cannot assign to const variable.");
-                    return;
-                }
-                expression();
-                emitBytes(OP_SET_ARRAY_ELEMENT, (uint8_t)arg);
-            } else {
-                emitBytes(OP_GET_ARRAY_ELEMENT, (uint8_t)arg);
-            }
-            
-        } else if (canAssign && match(TOKEN_EQUAL)) {
-            
-            if (current->locals[arg].isConst) {
-                error("Cannot assign to const variable.");
-                return;
-            }
-            expression();
-            emitBytes(OP_SET_LOCAL, (uint8_t)arg);
-            
-        } else {
-            emitBytes(OP_GET_LOCAL, (uint8_t)arg);
+        getOp = OP_GET_LOCAL;
+        setOp = OP_SET_LOCAL;
+        getArrOp = OP_GET_ARRAY;
+        setArrOp = OP_SET_ARRAY;
+    } else if ((arg = resolveUpvalue(current, &name)) != -1) {
+        getOp = OP_GET_UPVALUE;
+        setOp = OP_SET_UPVALUE;
+        getArrOp = OP_GET_ARRAY_UPVALUE;
+        setArrOp = OP_SET_ARRAY_UPVALUE;
+    } else if ((arg = identifierConstant(&name)) <= UINT8_MAX) {
+        getOp = OP_GET_GLOBAL;
+        setOp = OP_SET_GLOBAL;
+        getArrOp = OP_GET_ARRAY_GLOBAL;
+        setArrOp = OP_SET_ARRAY_GLOBAL;
+    } else {
+        getOp = OP_GET_GLOBAL_LONG;
+        setOp = OP_SET_GLOBAL_LONG;
+        getArrOp = OP_GET_ARRAY_GLOBAL_LONG;
+        setArrOp = OP_SET_ARRAY_GLOBAL_LONG;
+    }
+
+    if (match(TOKEN_LEFT_SQUARE_BRACE)) {
+        expression();
+        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+        isArray = true;
+    }
+
+    if (canAssign && match(TOKEN_EQUAL)) {
+        if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
+            error("Cannot assign to const variable.");
+            return;
         }
 
-    } else {
-        
-        uint32_t globalIndex = identifierConstant(&name);
+        expression();
 
-        if (globalIndex <= UINT8_MAX) {
-            if (match(TOKEN_LEFT_SQUARE_BRACE)) {
-                expression();
-                consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
-            
-                if (canAssign && match(TOKEN_EQUAL)) {
-                    
-                    expression();
-                    emitBytes(OP_SET_ARRAY_GLOBAL_ELEMENT, (uint8_t)globalIndex);
-                } else {
-                    emitBytes(OP_GET_ARRAY_GLOBAL_ELEMENT, (uint8_t)globalIndex);
-                }   
-
-            } else if (canAssign && match(TOKEN_EQUAL)) {
-                expression();
-                emitBytes(OP_SET_GLOBAL, (uint8_t)globalIndex);
-
-            } else {
-                emitBytes(OP_GET_GLOBAL, (uint8_t)globalIndex);
-            }
+        if (arg <= UINT8_MAX) {
+            isArray? emitBytes(setArrOp, (uint8_t)arg) : emitBytes(setOp, (uint8_t)arg);
         } else {
-            
-            if (match(TOKEN_LEFT_SQUARE_BRACE)) {
-                expression();
-                consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
-            
-                if (canAssign && match(TOKEN_EQUAL)) {
-                    if (current->locals[arg].isConst) {
-                        error("Cannot assign to const variable.");
-                        return;
-                    }
-                    expression();
-                    emitFourBytes(OP_SET_ARRAY_GLOBAL_ELEMENT_LONG, (uint8_t)((globalIndex & 0x000000ff)),
-                                                                    (uint8_t)((globalIndex & 0x0000ff00) >> 8),
-                                                                    (uint8_t)((globalIndex & 0x00ff0000) >> 16));
-                } else {
-                    emitFourBytes(OP_GET_ARRAY_GLOBAL_ELEMENT_LONG, (uint8_t)((globalIndex & 0x000000ff)),
-                                                                    (uint8_t)((globalIndex & 0x0000ff00) >> 8),
-                                                                    (uint8_t)((globalIndex & 0x00ff0000) >> 16));
-                }   
-
-            } else if (canAssign && match(TOKEN_EQUAL)) {
-                expression();
-                emitFourBytes(OP_SET_GLOBAL_LONG,  (uint8_t)((globalIndex & 0x000000ff)),
-                                                   (uint8_t)((globalIndex & 0x0000ff00) >> 8),
-                                                   (uint8_t)((globalIndex & 0x00ff0000) >> 16));
-
-            } else {
-                emitFourBytes(OP_GET_GLOBAL_LONG,  (uint8_t)((globalIndex & 0x000000ff)),
-                                                   (uint8_t)((globalIndex & 0x0000ff00) >> 8),
-                                                   (uint8_t)((globalIndex & 0x00ff0000) >> 16));
-
-            }
+            if (isArray) emitFourBytes(setArrOp, (uint8_t)((arg & 0x000000ff)), 
+                                                 (uint8_t)((arg & 0x0000ff00) >> 8),
+                                                 (uint8_t)((arg & 0x00ff0000) >> 16));
+            else emitFourBytes(setOp, (uint8_t)((arg & 0x000000ff)), 
+                                      (uint8_t)((arg & 0x0000ff00) >> 8),
+                                      (uint8_t)((arg & 0x00ff0000) >> 16));
+         
+        } 
+    } else {
+        if (arg <= UINT8_MAX) {
+            isArray? emitBytes(getArrOp, (uint8_t)arg) : emitBytes(getOp, (uint8_t)arg);
+        } else {
+            if (isArray) emitFourBytes(getArrOp, (uint8_t)((arg & 0x000000ff)), 
+                                                 (uint8_t)((arg & 0x0000ff00) >> 8),
+                                                 (uint8_t)((arg & 0x00ff0000) >> 16));
+            else emitFourBytes(getOp, (uint8_t)((arg & 0x000000ff)), 
+                                      (uint8_t)((arg & 0x0000ff00) >> 8),
+                                      (uint8_t)((arg & 0x00ff0000) >> 16));
         }
     }
 }
@@ -545,22 +596,6 @@ static void namedVariable(Token name, bool canAssign) {
 
 static void variable(bool canAssign) {
     namedVariable(parser.previous, canAssign);
-}
-
-
-static void addLocal(Token name, bool isConst) {
-    //we add the local to the current scope
-    Local* local = &current->locals[current->localCount++];
-    local->name = name;
-    //marked as uninitialized with depth = -1. Variable is "ready for use" after its
-    //initializer is compiled
-    local->depth = -1;
-    local->isConst = isConst;
-}
-
-static void markInitialized() {
-    if (current->scopeDepth ==  0) return;
-    current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
 static void declareVariable(bool isConst) {
@@ -599,34 +634,28 @@ static void defineVariable(uint32_t global, bool isConst) {
         return;
     }
 
-    if (isConst) {
-        if (global < UINT8_MAX) {
-            emitBytes(OP_DEFINE_CONST_GLOBAL, (uint8_t)global);
-        } else {
-            emitFourBytes(OP_DEFINE_CONST_GLOBAL_LONG, (uint8_t)((global & 0x000000ff)),
-                                                       (uint8_t)((global & 0x0000ff00) >> 8),
-                                                       (uint8_t)((global & 0x00ff0000) >> 16));
-        }
+    
+    if (global <= UINT8_MAX) {
+        isConst? emitBytes(OP_DEFINE_CONST_GLOBAL, (uint8_t)global) : emitBytes(OP_DEFINE_GLOBAL, (uint8_t)global);
     } else {
-        if (global < UINT8_MAX) {
-            emitBytes(OP_DEFINE_GLOBAL, (uint8_t)global);
-        } else {
-            emitFourBytes(OP_DEFINE_GLOBAL_LONG, (uint8_t)((global & 0x000000ff)),
-                                                 (uint8_t)((global & 0x0000ff00) >> 8),
-                                                 (uint8_t)((global & 0x00ff0000) >> 16));
-        }
-
+        if (isConst) emitFourBytes(OP_DEFINE_CONST_GLOBAL_LONG, (uint8_t)((global & 0x000000ff)),
+                                                                (uint8_t)((global & 0x0000ff00) >> 8),
+                                                                (uint8_t)((global & 0x00ff0000) >> 16));
+        else emitFourBytes(OP_DEFINE_GLOBAL_LONG, (uint8_t)((global & 0x000000ff)),
+                                                  (uint8_t)((global & 0x0000ff00) >> 8),
+                                                  (uint8_t)((global & 0x00ff0000) >> 16));                                                    
     }
+    
 }
 
 static void array(bool canAssign) {
     uint32_t elementsCount = 0;
-    if (!checkType(TOKEN_RIGHT_SQUARE_BRACE)) {
-        do {
-            expression();
-            elementsCount++;
-        } while (match(TOKEN_COMMA));
-    }
+
+    do {
+        expression();
+        elementsCount++;
+    } while (match(TOKEN_COMMA));
+ 
         
     consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
 
@@ -636,6 +665,25 @@ static void array(bool canAssign) {
                                       (uint8_t)((elementsCount & 0x00ff0000) >> 16));
 }
 
+static void dict(bool canAssign) {
+    uint32_t totalCount = 0;
+
+    do {
+        expression();
+        totalCount++;
+        consume(TOKEN_COLON, "Expect ':' after key value");
+        expression();
+        totalCount++;
+    } while (match(TOKEN_COMMA));
+
+    consume(TOKEN_RIGHT_BRACE, "Expect '}' after dictionary initialization");
+
+    if (totalCount < 256) emitBytes(OP_MAP, (uint8_t)totalCount);
+    else emitFourBytes(OP_MAP_LONG, (uint8_t)((totalCount & 0x000000ff)),
+                                    (uint8_t)((totalCount & 0x0000ff00) >> 8),
+                                    (uint8_t)((totalCount & 0x00ff0000) >> 16));
+
+}
 
 
 static void varDeclaration(bool isConst) {
@@ -654,11 +702,11 @@ static void varDeclaration(bool isConst) {
 }
 
 
-static void function();
+static void function(FunctionType type);
 
 static void funDeclaration() {
     // TOKEN_CONST makes sense only for variables, so we set the flag isConst to false 
-    uint8_t global = parseVariable("Expect function name.", false);
+    uint32_t global = parseVariable("Expect function name.", false);
     markInitialized();
     function(TYPE_FUNCTION);
     defineVariable(global, false);
@@ -686,8 +734,6 @@ static void or_(bool canAssign) {
     //se l'operando di sinistra è vero -> endJump : return
     //else -> elseJump : parsePrecedence, return
 }
-
-
 
 ParseRule* getRule(TokenType type) {
     return &rules[type];
@@ -870,17 +916,18 @@ static void forStatement() {
 }
 
 static void returnStatement() {
-    // if we're outside functions, it's an error to return from top-level lox function
+    // if we're outside functions, it's an error to return from top-level
     if (current->type == TYPE_SCRIPT) {
         error("Can't return from top-level function.");
     }
     
     if (match(TOKEN_SEMICOLON)) {
-        emitReturn();
+        emitReturn(current->type);
     } else {
         expression();
         consume(TOKEN_SEMICOLON, "Expect ';' after return value");
-        emitByte(OP_RETURN);
+        if (current->type != TYPE_LAMBDA) emitByte(OP_RETURN);
+        else emitByte(OP_RET_FROM_LAMBDA);
     }
 }
 
@@ -1026,26 +1073,59 @@ static void function(FunctionType type) {
     // param list
     consume(TOKEN_LEFT_PAREN, "Expect '(' after function name");
     if (!checkType(TOKEN_RIGHT_PAREN)) {
+
         do {
             current->function->arity++;
             if (current->function->arity > 255) {
-                errorAtCurrent("Can't have more than 255 parameters.");
+                    errorAtCurrent("Can't have more than 255 parameters.");
             }
 
-            bool isConst = match(TOKEN_CONST);
-            uint8_t paramConstant = parseVariable("Expect parameter name.", isConst);
-            defineVariable(paramConstant, isConst);
+            if (type == TYPE_LAMBDA) expression();
+            else {
+                bool isConst = match(TOKEN_CONST);
+                uint8_t paramConstant = parseVariable("Expect parameter name.", isConst);
+                defineVariable(paramConstant, isConst);
+            }
+            
         } while (match(TOKEN_COMMA));
+        
     }
+
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after function parameters");
+
 
     // body
     consume(TOKEN_LEFT_BRACE, "Expect '{' before function body");
     block();
 
     // creating function object
-    ObjFunction* function = endCompiler();
-    emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+    ObjFunction* function = endCompiler(type);
+    
+    // if (compiler.upvaluesCount == 0)  makeConstant(OBJ_VAL(function));
+
+    emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+
+    for (int i = 0; i < function->upvalueCount; i++) {
+        emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+        emitByte(compiler.upvalues[i].index);
+        /* 
+            printf("  upvalue %d: isLocal=%d, index=%d, name=%s\n",
+            i,
+            compiler.upvalues[i].isLocal,
+            compiler.upvalues[i].index,
+            compiler.enclosing->locals[compiler.upvalues[i].index].name);
+            printf("Emitting closure for %s:\n");
+        */
+    }
+
+    if (type == TYPE_LAMBDA) {
+        emitBytes(OP_CALL_LAMBDA, function->arity);
+    }
+    
+}
+
+static void lambda(bool canAssign) {
+    function(TYPE_LAMBDA);
 }
 
 ObjFunction* compile(const char* source) {
@@ -1063,6 +1143,6 @@ ObjFunction* compile(const char* source) {
         declaration();
     }
 
-    ObjFunction* function = endCompiler();
+    ObjFunction* function = endCompiler(current->type);
     return parser.hadError ? NULL : function;
 }
