@@ -20,7 +20,7 @@ void freeTable(Table* table) {
 }
 
 static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
-    uint32_t index = key->hash % capacity;
+    uint32_t index = key->hash & (capacity - 1);
     Entry* tombstone = NULL;
 
     for(;;) {
@@ -40,7 +40,7 @@ static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
             return entry;
         }
 
-        index = (index + 1) % capacity; //the modulo is for wrapping around the array
+        index = (index + 1) & (capacity - 1); //the modulo is for wrapping around the array
     }
 }
 
@@ -140,4 +140,38 @@ ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t
 
         index = (index + 1) % table->capacity;
     }
+}
+
+void tableRemoveWhite (Table* table) {
+    for (int i = 0; i < table->capacity; i++) {
+        Entry* entry = &table->entries[i];
+        if (entry->key != NULL && !entry->key->obj.isMarked) {
+            tableDelete(table, entry->key);
+        }
+    }
+}
+
+void initEntryList(EntryList* arr) {
+
+    arr->capacity = 0;
+    arr->count = 0;
+    arr->entries = NULL;
+}
+
+void writeEntryList(EntryList* arr,  Entry value) {
+    if (arr->capacity < arr->count + 1) {
+        int oldCapacity = arr->capacity;
+        arr->capacity = GROW_CAPACITY(oldCapacity);
+        arr->entries = GROW_ARRAY(Entry, arr->entries, oldCapacity, arr->capacity);
+    }
+
+    arr->entries[arr->count] = value;
+    arr->count++;
+}
+
+
+void freeEntryList(EntryList* arr) {
+
+    FREE_ARRAY(uint8_t, arr->entries, arr->capacity);
+    initEntryList(arr);
 }

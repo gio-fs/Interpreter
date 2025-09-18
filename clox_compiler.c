@@ -4,6 +4,7 @@
 #include "common.h"
 #include "object.h"
 #include "chunk.h"
+#include "memory.h"
 #include "clox_debug.h"
 #include "clox_compiler.h"
 #include "clox_scanner.h"
@@ -27,7 +28,6 @@ static void and_(bool canAssign);
 static void or_(bool canAssign);
 static void call(bool canAssign);
 static void array(bool canAssign);
-static void indexing(bool canAssign);
 static void dict(bool canAssign);
 static void lambda(bool canAssign);
 
@@ -75,10 +75,12 @@ ParseRule rules[] = {
     [TOKEN_CONST]               = {NULL,      NULL,       PREC_NONE},
     [TOKEN_ERROR]               = {NULL,      NULL,       PREC_NONE},
     [TOKEN_EOF]                 = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_TERNARY]             = {NULL,      ternary,    PREC_TERNARY},
+    [TOKEN_QUESTION]            = {NULL,      ternary,    PREC_TERNARY},
     [TOKEN_LEFT_SQUARE_BRACE]   = {array,     NULL,       PREC_NONE}, 
     [TOKEN_RIGHT_SQUARE_BRACE]  = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_LAMBDA]              = {lambda,    lambda,       PREC_NONE},
+    [TOKEN_LAMBDA]              = {lambda,    lambda,     PREC_NONE},
+    [TOKEN_MINUS_EQUAL]         = {NULL,      NULL,       PREC_NONE},
+    [TOKEN_PLUS_EQUAL]          = {NULL,      NULL,       PREC_NONE}
 
 };
 
@@ -135,7 +137,15 @@ static void errorAtCurrent(const char* message) {
     errorAt(&parser.current, message);
 }
 
+static Token makeSyntheticToken(const char* src) {
+    Token token;
+    token.type = TOKEN_IDENTIFIER;
+    token.start = src;
+    token.length = strlen(src);
+    token.line = 1;
 
+    return token;
+}
 
 static void advance() {
     parser.previous = parser.current;
@@ -363,7 +373,7 @@ static void endScope() {
 
 }
 
-static void popLocalsAbove (int depth) {
+static void popLocalsAbove(int depth) {
     int popped = 0;
     int i = current->localCount - 1;
     while (i >= 0 && current->locals[i].depth > depth) {
@@ -373,6 +383,7 @@ static void popLocalsAbove (int depth) {
         fprintf(stderr, "[popLocalsAbove] popped %d locals\n", popped);
     }
 }
+
 
 static void expression();
  ParseRule* getRule(TokenType type);
@@ -525,13 +536,13 @@ static void call(bool canAssign) {
     emitBytes(OP_CALL, argCount);
 }
 
-static void namedVariable(Token name, bool canAssign) {
+static int namedVariable(Token name, bool canAssign) {
 
     int arg = resolveLocal(current, &name);
     bool isArray = false;
 
     OpCode getOp, setOp, setArrOp, getArrOp;
-
+        
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
@@ -560,16 +571,31 @@ static void namedVariable(Token name, bool canAssign) {
         isArray = true;
     }
 
-    if (canAssign && match(TOKEN_EQUAL)) {
+    bool compoundAssign = match(TOKEN_MINUS_EQUAL) || match(TOKEN_PLUS_EQUAL);
+    TokenType compoundType;
+    uint8_t _arg;
+    if (compoundAssign) compoundType = parser.previous.type;
+
+    if (isArray && compoundAssign) {
+        Token slot = makeSyntheticToken("__index_slot");
+        addLocal(slot, false);
+        current->locals[current->localCount - 1].depth = 1;
+        _arg = resolveLocal(current, &slot);
+        emitBytes(OP_SET_LOCAL, _arg);
+        emitByte(OP_SAVE_INDEX);
+    }
+
+    if (canAssign && (match(TOKEN_EQUAL) || match(TOKEN_PLUS_EQUAL) || match(TOKEN_MINUS_EQUAL))) {
         if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
             error("Cannot assign to const variable.");
-            return;
         }
 
-        expression();
+        expression(); 
 
         if (arg <= UINT8_MAX) {
-            isArray? emitBytes(setArrOp, (uint8_t)arg) : emitBytes(setOp, (uint8_t)arg);
+            if (isArray) emitBytes(setArrOp, (uint8_t)arg);
+            else emitBytes(setOp, (uint8_t)arg);
+            
         } else {
             if (isArray) emitFourBytes(setArrOp, (uint8_t)((arg & 0x000000ff)), 
                                                  (uint8_t)((arg & 0x0000ff00) >> 8),
@@ -577,11 +603,12 @@ static void namedVariable(Token name, bool canAssign) {
             else emitFourBytes(setOp, (uint8_t)((arg & 0x000000ff)), 
                                       (uint8_t)((arg & 0x0000ff00) >> 8),
                                       (uint8_t)((arg & 0x00ff0000) >> 16));
-         
         } 
     } else {
         if (arg <= UINT8_MAX) {
-            isArray? emitBytes(getArrOp, (uint8_t)arg) : emitBytes(getOp, (uint8_t)arg);
+            if (isArray) emitBytes(getArrOp, (uint8_t)arg);
+            else emitBytes(getOp, (uint8_t)arg);
+            
         } else {
             if (isArray) emitFourBytes(getArrOp, (uint8_t)((arg & 0x000000ff)), 
                                                  (uint8_t)((arg & 0x0000ff00) >> 8),
@@ -591,6 +618,39 @@ static void namedVariable(Token name, bool canAssign) {
                                       (uint8_t)((arg & 0x00ff0000) >> 16));
         }
     }
+
+    if (canAssign && compoundAssign) {
+        if (isArray) emitBytes(OP_GET_LOCAL, _arg);
+
+        if (arg <= UINT8_MAX) {
+            if (isArray) emitBytes(setArrOp, (uint8_t)arg);
+            else emitBytes(setOp, (uint8_t)arg);
+            
+        } else {
+            if (isArray) emitFourBytes(setArrOp, (uint8_t)((arg & 0x000000ff)), 
+                                                 (uint8_t)((arg & 0x0000ff00) >> 8),
+                                                 (uint8_t)((arg & 0x00ff0000) >> 16));
+            else emitFourBytes(setOp, (uint8_t)((arg & 0x000000ff)), 
+                                      (uint8_t)((arg & 0x0000ff00) >> 8),
+                                      (uint8_t)((arg & 0x00ff0000) >> 16));
+        } 
+
+        expression();
+        compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
+
+        if (arg <= UINT8_MAX) isArray? emitBytes(setArrOp, (uint8_t)arg) : emitBytes(setOp, (uint8_t)arg);
+        else {
+            if (isArray) emitFourBytes(setArrOp, (uint8_t)((arg & 0x000000ff)), 
+                                                 (uint8_t)((arg & 0x0000ff00) >> 8),
+                                                 (uint8_t)((arg & 0x00ff0000) >> 16));
+            else emitFourBytes(setOp, (uint8_t)((arg & 0x000000ff)), 
+                                      (uint8_t)((arg & 0x0000ff00) >> 8),
+                                      (uint8_t)((arg & 0x00ff0000) >> 16));
+        }
+
+    }
+
+    return arg;
 }
  
 
@@ -754,6 +814,7 @@ static void parsePrecedence(Precedence precedence) {
     prefixRule(canAssign);
 
     while (precedence <= getRule(parser.current.type)->precedence) {
+        printf("Entering midfix loop\n");
         advance();
         ParseFn infixRule = getRule(parser.previous.type)->infix;
         infixRule(canAssign);
@@ -762,6 +823,9 @@ static void parsePrecedence(Precedence precedence) {
     if (canAssign && match(TOKEN_EQUAL)) {
         error("Invalid assignement target.");
     }
+
+    printf("Exiting parsePrecedence\n");
+
 }
 
 
@@ -770,6 +834,7 @@ static void loopStatement(int loopStart, BreakEntries* breakEntries);
 
 static void expressionStatement() {
     expression();
+    printf(" Current token: %d\n", parser.current.type);
     consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     emitByte(OP_POP);
 }
@@ -847,17 +912,86 @@ static void whileStatement() {
     }
 }
 
-static void forStatement() {
 
+
+
+static void forEachStatement(BreakEntries* breakEntries) {
     beginScope();
+
+    addLocal(parser.current, false);
+    markInitialized();
+    uint8_t arg = resolveLocal(current, &parser.current);
+
+    emitConstant(NIL_VAL);
+    emitBytes(OP_SET_LOCAL, arg);
+    advance();
+
+    consume(TOKEN_IN, "Expect keyword 'in' after identifier.");
+
+    int itArg = resolveLocal(current, &parser.current);
+    if (itArg == -1) itArg = resolveUpvalue(current, &parser.current);
+    Token itName = parser.current;
+    advance();
+
+    Token count = makeSyntheticToken("__for_each_count");
+    addLocal(count, false);
+    markInitialized();
+    uint8_t _arg = resolveLocal(current, &count);
+
+    emitConstant(NUMBER_VAL(0));
+    emitBytes(OP_SET_LOCAL, _arg);
+
+    int loopStart = currentChunk()->count;
+    int exitJump = -1;
+
+    if (resolveLocal(current, &itName) != -1
+            || resolveUpvalue(current, &itName) != -1) emitThreeBytes(OP_FOR_EACH, _arg, itArg);
+    else {
+        uint32_t global = identifierConstant(&itName);
+        emitThreeBytes(OP_FOR_EACH_GLOBAL, _arg, global);
+    }
+    
+    emitBytes(OP_GET_LOCAL, _arg);
+    emitByte(OP_GREATER);
+
+    exitJump = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
+
+    loopStatement(loopStart, breakEntries);
+
+    emitBytes(OP_GET_LOCAL, _arg);
+    emitConstant((NUMBER_VAL(1)));
+    emitByte(OP_ADD);
+    emitBytes(OP_SET_LOCAL, _arg);
+    emitByte(OP_POP);
+    
+    emitLoop(loopStart);
+
+    if (exitJump != -1) {
+        patchJump(exitJump);
+        emitByte(OP_POP);
+    }
+
+    // count popped by OP_GREATER
+    current->localCount--;
+    endScope();
+}
+
+
+static void forStatement() {
     BreakEntries breakEntries = {.breakCount = 0, .depth = 0};
     breakEntries.depth = current->scopeDepth;
 
+    if (checkType(TOKEN_IDENTIFIER)) {
+        forEachStatement(&breakEntries);
+        return;
+    }
+
+    beginScope();
     consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
 
-    // Initializer clause
     if (match(TOKEN_SEMICOLON)) {
-        //nothing, skips to contition clause
+        // nothing, skips to contition clause
     } else if (match(TOKEN_CONST)) {
         consume(TOKEN_VAR, "Expect 'var' after 'const'.");
         varDeclaration(true);
@@ -985,8 +1119,6 @@ static void loopStatement(int loopStart, BreakEntries* breakEntries) {
     }
 }
 
-
-
 static void synchronize() {
     parser.panicMode = false;
     while (parser.current.type != TOKEN_EOF) {
@@ -1032,8 +1164,9 @@ static void declaration () {
 }
 
 static void loopDeclaration(int loopStart, BreakEntries* breakEntries) {
-
-    if (match(TOKEN_CONST)) {
+    if (match(TOKEN_FUNC)) {
+        funDeclaration();  
+    } else if (match(TOKEN_CONST)) {
         consume(TOKEN_VAR, "Expect variable after const.");
         varDeclaration(true);
     } else if (match(TOKEN_VAR)) {
@@ -1127,6 +1260,15 @@ static void function(FunctionType type) {
 static void lambda(bool canAssign) {
     function(TYPE_LAMBDA);
 }
+
+void markCompilerRoots() {
+    Compiler* compiler = current;
+    while (compiler != NULL) {
+        markObj((Obj*)compiler->function);
+        compiler = compiler->enclosing;
+    }
+}
+
 
 ObjFunction* compile(const char* source) {
     initScanner(source);

@@ -150,7 +150,6 @@ static TokenType checkKeyword(int start, int charLeft, const char* keyChar, Toke
 Token scanToken();
 
 static TokenType identifierType() {
-
     switch (scanner.start[0]) {
         case 'a': return checkKeyword(1, 2, "nd", TOKEN_AND);
         case 'b': return checkKeyword(1, 4, "reak", TOKEN_BREAK);
@@ -176,7 +175,13 @@ static TokenType identifierType() {
             break;
 
         case 'e': return checkKeyword(1, 3, "lse", TOKEN_ELSE);
-        case 'i': return checkKeyword(1, 1, "f", TOKEN_IF);
+        case 'i': if (scanner.current - scanner.start > 1) {
+                switch (scanner.start[1]) {
+                    case 'f': return checkKeyword(1, 1, "f", TOKEN_IF);
+                    case 'n': return checkKeyword(1, 1, "n", TOKEN_IN);
+                }
+            }
+            break;
         case 'f' :
             if (scanner.current - scanner.start > 1) {
                 switch (scanner.start[1]) {
@@ -217,9 +222,6 @@ static Token identifier() {
 
 
 Token scanToken() {
-
-    const char* savedCurrent = scanner.current;
-
     skipWhitespace();
 
     scanner.start = scanner.current;
@@ -265,18 +267,19 @@ Token scanToken() {
         case ';': return makeToken(TOKEN_SEMICOLON);
         case ',': return makeToken(TOKEN_COMMA);
         case '.': return makeToken(TOKEN_DOT);
-        case '-': return makeToken(TOKEN_MINUS);
-        case '+': return makeToken(TOKEN_PLUS);
+        case '-': return makeToken(checkMatch('=') ? TOKEN_MINUS_EQUAL : TOKEN_MINUS);
+        case '+': return makeToken(checkMatch('=') ? TOKEN_PLUS_EQUAL : TOKEN_PLUS);
         case '/': return makeToken(TOKEN_SLASH);
         case '*': return makeToken(TOKEN_STAR);
         case '!': return makeToken(checkMatch('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG);
         case '=': return makeToken(checkMatch('=') ? TOKEN_EQUAL_EQUAL : TOKEN_EQUAL);
         case '<': return makeToken(checkMatch('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS);
         case '>': return makeToken(checkMatch('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER);
-        case '"': return string();
         case '$': return makeToken(checkMatch('{') ? TOKEN_STRING_INTERP_START : TOKEN_ERROR);
-        case '?': return makeToken(TOKEN_TERNARY);
+        case '?': return makeToken(TOKEN_QUESTION);
         case ':': return makeToken(TOKEN_COLON);
+        case '"': return string();
+        
 
     }
 }

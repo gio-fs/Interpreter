@@ -11,9 +11,14 @@
 Obj* allocateObject(size_t size, ObjType type) {
     Obj* obj = reallocate(NULL, 0, size);
     obj->type = type;
+    obj->isMarked = false;
 
     obj->next = vm.objects;
     vm.objects = obj;
+
+#ifdef DEBUG_LOG_GC
+    printf("%p allocate %ld for %d\n", (void*)obj, size, type);
+#endif
 
     return obj;
 }
@@ -99,6 +104,8 @@ ObjUpvalue* newUpvalue(Value* slot) {
 ObjDictionary* newDictionary() {
     ObjDictionary* dict = ALLOCATE_OBJ(ObjDictionary, OBJ_DICTIONARY);
     initTable(&dict->map);
+    initEntryList(&dict->entries);
+
     return dict;
 }
 
@@ -190,6 +197,10 @@ void printObject(Value value) {
         }
         case OBJ_UPVALUE: {
             printf("upvalue");
+            break;
+        }
+        case OBJ_DICTIONARY: {
+            printf("<dict>");
             break;
         }
 

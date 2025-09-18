@@ -155,6 +155,18 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             }
             return offset;
         }
+        case OP_FOR_EACH: {
+            uint8_t slot = chunk->code[offset + 1];
+            uint8_t slot2 = chunk->code[offset + 2];
+            printf("%-16s %4d, %4d\n", "OP_FOR_EACH", slot, slot2);
+            return offset + 3;
+        }
+        case OP_FOR_EACH_GLOBAL: {
+            uint8_t slot = chunk->code[offset + 1];
+            uint8_t slot2 = chunk->code[offset + 2];
+            printf("%-16s %4d, %4d\n", "OP_FOR_EACH_GLOBAL", slot, slot2);
+            return offset + 3;
+        }
         case OP_ARRAY_CALL:
             return simpleInstruction("OP_ARRAY_CALL", offset);
         case OP_CALL:

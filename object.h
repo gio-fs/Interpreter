@@ -17,6 +17,7 @@ typedef enum {
 
 struct Obj {
     ObjType type;
+    bool isMarked;
     struct Obj* next; //singly-linked list to keep track of the objs for the GC
 };
 
@@ -65,6 +66,7 @@ typedef struct {
 typedef struct {
     Obj obj;
     Table map;
+    EntryList entries;
 } ObjDictionary;
 
 
@@ -98,6 +100,7 @@ ObjString* copyString(const char* chars, int length);
 ObjString* allocateString(char* chars, int length, uint32_t hash);
 ObjString* takeString(char* chars, int length);
 void printObject(Value value);
+uint32_t hashString(const char* chars, int length);
 
 //declared as inline because the function body uses two times value,
 //which the preprocessor would convert in the expression in brackets.
