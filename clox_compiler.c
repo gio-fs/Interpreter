@@ -542,6 +542,7 @@ static void setVariable(OpCode opcodes[], int indexingCount, int arg, bool isArr
             emitBytes(opcodes[3], (uint8_t)arg);
 
             for (int i = 0; i < indexingCount - 1; i++) {
+                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
                 emitByte(OP_GET_ELEMENT_FROM_TOP);
             }
 
@@ -555,6 +556,7 @@ static void setVariable(OpCode opcodes[], int indexingCount, int arg, bool isArr
                                       (uint8_t)((arg & 0x00ff0000) >> 16));
 
             for (int i = 0; i < indexingCount - 1; i++) {
+                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
                 emitByte(OP_GET_ELEMENT_FROM_TOP);
             }
 
@@ -570,6 +572,7 @@ static void getVariable(OpCode opcodes[], int indexingCount, int arg, bool isArr
             emitBytes(opcodes[2], (uint8_t)arg);
 
             for (int i = 0; i < indexingCount - 1; i++) {
+                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
                 emitByte(OP_GET_ELEMENT_FROM_TOP);
             }
 
@@ -582,6 +585,7 @@ static void getVariable(OpCode opcodes[], int indexingCount, int arg, bool isArr
                                       (uint8_t)((arg & 0x00ff0000) >> 16));
 
             for (int i = 0; i < indexingCount - 1; i++) {
+                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
                 emitByte(OP_GET_ELEMENT_FROM_TOP);
             }
 
@@ -630,7 +634,7 @@ static int namedVariable(Token name, bool canAssign) {
         isArray = true;
     }
 
-    printf("indexing count from namedVariable: %d\n", _indexingCount);
+    for (int i = 0; i < _indexingCount - 1; i++) emitThreeBytes(OP_SWAP, i, i + 1);
 
     bool compoundAssign = match(TOKEN_MINUS_EQUAL) || match(TOKEN_PLUS_EQUAL);
     TokenType compoundType;
@@ -962,6 +966,12 @@ static void forEachStatement(BreakEntries* breakEntries) {
     while (match(TOKEN_LEFT_SQUARE_BRACE)) {
         expression();
         consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+        indexingCount++;
+
+        Token indexingExpr = makeSyntheticToken("__for_each_indexing");
+        addLocal(indexingExpr, false);
+        markInitialized();
+        _IndexingExpr = resolveLocal(current, &indexingExpr);
         
         if (globalIt == 0) 
                 itUpvalArg == 0? 
@@ -972,15 +982,6 @@ static void forEachStatement(BreakEntries* breakEntries) {
                                                            (uint8_t)((globalIt & 0x0000ff00) >> 8),
                                                            (uint8_t)((globalIt & 0x00ff0000) >> 16));
         }
-        indexingCount++;
-    }
-
-    if (indexingCount > 0) {
-        Token indexingExpr = makeSyntheticToken("__for_each_indexing");
-        addLocal(indexingExpr, false);
-        markInitialized();
-        _IndexingExpr = resolveLocal(current, &indexingExpr);
-        emitBytes(OP_SET_LOCAL, _IndexingExpr);
     }
 
     int loopStart = currentChunk()->count;
@@ -1014,8 +1015,6 @@ static void forEachStatement(BreakEntries* breakEntries) {
         emitByte(OP_POP);
     }
 
-    // count popped by OP_GREATER
-    current->localCount--;
     endScope();
 }
 

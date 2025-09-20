@@ -247,7 +247,7 @@ static ObjString* valueToString(Value value) {
 static void concatenate() {
 
     ObjString* b = valueToString(peek(0));
-    ObjString* a = valueToString(peek(0));
+    ObjString* a = valueToString(peek(1));
 
     int length = a->length + b->length;
     char* newString = ALLOCATE(char, length + 1);
@@ -295,6 +295,7 @@ void initVM() {
     initTable(&vm.strings);
     initTable(&vm.globals);
     initTable(&vm.constGlobals);
+    initTable(&vm.temps);
 
     defineNative("clock", clockNative);
 }
@@ -310,6 +311,7 @@ void freeVM() {
     freeTable(&vm.strings);
     freeTable(&vm.globals);
     freeTable(&vm.constGlobals);
+    freeTable(&vm.temps);
     freeObjects();
 }
 
@@ -867,8 +869,6 @@ static InterpretResult run() {
                 Value iterable = frame->slots[itArg];
                 Value item;
                 int count = (int)AS_NUMBER(frame->slots[arg]);
-
-                printValue(iterable);
                 
                 if (!isIterable(iterable)) {
                     if (IS_FUNCTION(frame->slots[itArg]) 
@@ -881,7 +881,10 @@ static InterpretResult run() {
 
                 switch (AS_OBJ(iterable)->type) {
                     case OBJ_ARRAY: { 
-                        if (count >= AS_ARRAY(iterable)->values.count) break;
+                        if (count >= AS_ARRAY(iterable)->values.count) {
+                            push(NUMBER_VAL(AS_ARRAY(iterable)->values.count));
+                            break;
+                        }
 
                         item = AS_ARRAY(iterable)->values.values[count];
                         frame->slots[arg - 1] = item;
@@ -891,12 +894,15 @@ static InterpretResult run() {
                         break;
                     }
                     case OBJ_DICTIONARY: {
-                        if (count >= AS_MAP(iterable)->map.count) break;
-
+                        if (count >= AS_MAP(iterable)->map.count) {
+                            push(NUMBER_VAL(AS_MAP(iterable)->map.count));
+                            break;
+                        }
+                        
                         item = OBJ_VAL(AS_MAP(iterable)->entries.entries[count].key);
                         frame->slots[arg - 1] = item;
                         frame->slots[arg] = NUMBER_VAL(count);
-                    
+                        
                         push(NUMBER_VAL(AS_MAP(iterable)->map.count));
                         break;
                     }

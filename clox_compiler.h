@@ -60,6 +60,8 @@ typedef struct Compiler {
     Upvalue upvalues[UINT8_COUNT];
     int upvaluesCount;
     int scopeDepth;
+
+    int indexingCount;
 } Compiler;
 
 typedef struct {
