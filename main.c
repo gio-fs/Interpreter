@@ -7,11 +7,9 @@
 #include "vm.h"
 
 static void repl() {
-
     char line[65536];
 
     for(;;) {
-
         if(!fgets(line, sizeof(line), stdin)) {
             printf("\n");
             break;
@@ -22,7 +20,6 @@ static void repl() {
 }
 
 static char* readFile(const char* path) {
-
     FILE* file = fopen(path, "rb");
 
     if (file == NULL) {

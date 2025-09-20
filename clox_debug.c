@@ -121,22 +121,22 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return byteInstruction("OP_CALL_LAMBDA", chunk, offset);   
         case OP_RET_FROM_LAMBDA:
             return simpleInstruction("OP_RET_FROM_LAMBDA", offset);
-        case OP_GET_ARRAY:
-            return byteInstruction("OP_GET_ARRAY", chunk, offset);
-        case OP_SET_ARRAY:
-            return byteInstruction("OP_SET_ARRAY", chunk, offset);
-        case OP_GET_ARRAY_GLOBAL:
-            return byteInstruction("OP_GET_ARRAY_GLOBAL", chunk, offset);
-        case OP_SET_ARRAY_GLOBAL:
-            return byteInstruction("OP_SET_ARRAY_GLOBAL", chunk, offset);
+        case OP_GET_ELEMENT:
+            return byteInstruction("OP_GET_ELEMENT", chunk, offset);
+        case OP_SET_ELEMENT:
+            return byteInstruction("OP_SET_ELEMENT", chunk, offset);
+        case OP_GET_ELEMENT_GLOBAL:
+            return byteInstruction("OP_GET_ELEMENT_GLOBAL", chunk, offset);
+        case OP_SET_ELEMENT_GLOBAL:
+            return byteInstruction("OP_SET_ELEMENT_GLOBAL", chunk, offset);
         case OP_GET_UPVALUE:
             return byteInstruction("OP_GET_UPVALUE", chunk, offset);
         case OP_SET_UPVALUE:
             return byteInstruction("OP_SET_UPVALUE", chunk, offset);
-        case OP_GET_ARRAY_UPVALUE:
-            return byteInstruction("OP_GET_ARRAY_UPVALUE", chunk, offset);
-        case OP_SET_ARRAY_UPVALUE:
-            return byteInstruction("OP_SET_ARRAY_UPVALUE", chunk, offset);
+        case OP_GET_ELEMENT_UPVALUE:
+            return byteInstruction("OP_GET_ELEMENT_UPVALUE", chunk, offset);
+        case OP_SET_ELEMENT_UPVALUE:
+            return byteInstruction("OP_SET_ELEMENT_UPVALUE", chunk, offset);
         case OP_CLOSE_UPVALUE:
             return simpleInstruction("OP_CLOSE_UPVALUE", offset);
         case OP_CLOSURE: {

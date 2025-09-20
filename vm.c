@@ -126,22 +126,6 @@ static bool call(ObjClosure* closure, int argc) {
     return true;
 }
 
-static bool callLambda(ObjClosure* lambda, int argc) {
-    if (argc != lambda->function->arity) {
-        runtimeError("Expected %d captures but got %d" , lambda->function->arity, argc);
-        return false;
-    }
-
-    growStack();
-
-    CallFrame* frame = &vm.frameArray.frames[vm.frameArray.count++];
-    frame->closure = lambda;
-    frame->ip = lambda->function->chunk.code;
-    frame->slots = vm.stackTop - 1;
-
-    return true;
-
-}
 
 static bool callValue(Value callee, int argCount) {
     if (IS_OBJ(callee)) {
@@ -262,8 +246,8 @@ static ObjString* valueToString(Value value) {
 
 static void concatenate() {
 
-    ObjString* b = valueToString(pop());
-    ObjString* a = valueToString(pop());
+    ObjString* b = valueToString(peek(0));
+    ObjString* a = valueToString(peek(0));
 
     int length = a->length + b->length;
     char* newString = ALLOCATE(char, length + 1);
@@ -279,6 +263,8 @@ static void concatenate() {
     // never changes place, only the ownership switches between temp and result
 
     ObjString* result = takeString(newString, length);
+    pop();
+    pop();
     push(OBJ_VAL(result));
 }
 
@@ -301,6 +287,8 @@ void initVM() {
     vm.grayCount = 0;
     vm.grayCapacity = 0;
     vm.grayStack = NULL;
+
+    vm.isCollecting = false;
 
     initCallFrameArray(&vm.frameArray);
 
@@ -520,6 +508,7 @@ static InterpretResult run() {
                 // distance becomes -1 -(length - 1),  thus length elements from top
                 ValueType firstElementType = peek(length - 1).type; 
                 ObjArray* arr = newArray(firstElementType);
+                push(OBJ_VAL(arr));
 
                 for (int i = length - 1; i >= 0; i--) {
                     bool hasAppended = appendArray(arr, peek(i));
@@ -535,9 +524,11 @@ static InterpretResult run() {
                     pop();
                 }
 
-                if (arr->values.count == 0) arr->type = VAL_NIL;
+                if (arr->values.count == 0) {
+                    arr->type = VAL_NIL;
+                    appendArray(arr, NIL_VAL);
+                }
 
-                push(OBJ_VAL(arr));
                 break;
             }
             case OP_ARRAY_LONG: {
@@ -546,6 +537,7 @@ static InterpretResult run() {
                 // distance becomes -1 -(length - 1),  thus length elements from top
                 ValueType firstElementType = peek(length - 1).type; 
                 ObjArray* arr = newArray(firstElementType);
+                push(OBJ_VAL(arr));
 
                 for (int i = length - 1; i >= 0; i--) {
                     bool hasAppended = appendArray(arr, peek(i));
@@ -561,15 +553,17 @@ static InterpretResult run() {
                     pop();
                 }
                 
-                if (arr->values.count == 0) arr->type = VAL_NIL;
+                if (arr->values.count == 0) {
+                    arr->type = VAL_NIL;
+                    appendArray(arr, NIL_VAL);
+                }
 
-                push(OBJ_VAL(arr));
+                
                 break;
             }
             case OP_MAP: {
                 int count = READ_BYTE();
                 ObjDictionary* dict = newDictionary();
-
 
                 for (int i = count - 1; i > 0; i -= 2) {
                     ObjString* key = AS_STRING(peek(i));    
@@ -585,11 +579,13 @@ static InterpretResult run() {
                 }
 
                 push(OBJ_VAL(dict));
+
                 break;
             }
             case OP_MAP_LONG: {
                 uint32_t count = READ_LONG();
                 ObjDictionary* dict = newDictionary();
+                push(OBJ_VAL(dict));
 
                 for (int i = count - 1; i > 0; i -= 2) {
                     Value elem = peek(i - 1);
@@ -604,13 +600,14 @@ static InterpretResult run() {
                     pop();
                 }
 
-                push(OBJ_VAL(dict));
                 break;
             }
             case OP_CALL_LAMBDA: {
                 int argCount = READ_BYTE();
                 printf("argc: %d\n", argCount);
-                if (!callLambda(AS_CLOSURE(peek(0)), argCount)) return INTERPRET_RUNTIME_ERROR;
+                if (!call(AS_CLOSURE(peek(0)), argCount)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
 
                 frame = &vm.frameArray.frames[vm.frameArray.count - 1];
                 break;
@@ -630,7 +627,7 @@ static InterpretResult run() {
                 frame = &vm.frameArray.frames[vm.frameArray.count - 1];
                 break;
             }
-            /*case OP_GET_ARRAY: {
+            /*case OP_GET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value elementIndex = pop();
 
@@ -672,7 +669,7 @@ static InterpretResult run() {
                 push(element);
                 break;
             }*/
-           case OP_GET_ARRAY: {
+           case OP_GET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value elementIndex = pop();
 
@@ -716,7 +713,7 @@ static InterpretResult run() {
                 push(element);
                 break;
             }   
-            case OP_SET_ARRAY: {
+            case OP_SET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value setValue = pop();
                 Value elementIndex = peek(0);
@@ -758,7 +755,7 @@ static InterpretResult run() {
                 break;
             }
             
-            case OP_GET_ARRAY_GLOBAL: {
+            case OP_GET_ELEMENT_GLOBAL: {
                 ObjString* name = READ_STRING();
                 Value elementIndex = pop();
                 Value arr;
@@ -806,7 +803,7 @@ static InterpretResult run() {
                 push(element);
                 break;
             }
-            case OP_SET_ARRAY_GLOBAL: {
+            case OP_SET_ELEMENT_GLOBAL: {
                 ObjString* name = READ_STRING();
                 Value setValue = pop();
                 Value elementIndex = peek(0);
@@ -871,10 +868,15 @@ static InterpretResult run() {
                 Value item;
                 int count = (int)AS_NUMBER(frame->slots[arg]);
 
+                printValue(iterable);
                 
                 if (!isIterable(iterable)) {
-                    runtimeError("Object is not iterable");
-                    return INTERPRET_RUNTIME_ERROR;
+                    if (IS_FUNCTION(frame->slots[itArg]) 
+                            && AS_FUNCTION(frame->slots[itArg])->isLambda) iterable = frame->slots[itArg - 1];
+                    else {
+                        runtimeError("Object is not iterable");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
                 }
 
                 switch (AS_OBJ(iterable)->type) {
@@ -945,7 +947,6 @@ static InterpretResult run() {
                         frame->slots[arg] = NUMBER_VAL(count);
 
                         push(NUMBER_VAL(AS_MAP(iterable)->map.count));
-                        
                         break;
                     }
 
@@ -1049,54 +1050,131 @@ static InterpretResult run() {
                 *frame->closure->upvalues[index]->location = peek(0);
                 break;
             }
-            case OP_GET_ARRAY_UPVALUE: {
+            case OP_GET_ELEMENT_UPVALUE: {
                 printf("Entering get\n");
                 int index = READ_BYTE();
                 Value elementIndex = pop();
+                Value dataStruct = *frame->closure->upvalues[index]->location;
+                push(dataStruct);
             
-                if (!IS_NUMBER(elementIndex)) {
-                    runtimeError("Array index must evaluate to positive integer.");
+                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                    runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                if (!IS_ARRAY(*frame->closure->upvalues[index]->location)) {
-                    runtimeError("Indexed element is not an array");
+                if (!IS_ARRAY(dataStruct) 
+                        && !IS_MAP(dataStruct)) {
+                    runtimeError("Indexed element is not an array or dictionary");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
                 Value element;
-                if (!getArray(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), &element)){
-                    runtimeError("Index out of bounds.");
-                    return INTERPRET_RUNTIME_ERROR;
+                if (IS_ARRAY(dataStruct)) {
+                    if (!getArray(AS_ARRAY(dataStruct), AS_NUMBER(elementIndex), &element)){
+                        runtimeError("Index out of bounds.");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                } else {
+                    if (!tableGet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), &element)) {
+                        runtimeError("Key not found");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
                 }
-                
+
+                pop();
                 push(element);
-                printf("Exit from get\n");
                 break;
 
             }
-            case OP_SET_ARRAY_UPVALUE: {
+            case OP_SET_ELEMENT_UPVALUE: {
                 printf("Entering set\n");
                 int index = READ_BYTE();
                 Value setValue = pop();
                 Value elementIndex = pop();
+                Value dataStruct = *frame->closure->upvalues[index]->location;
+                push(dataStruct);
+            
+                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                    runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                if (!IS_ARRAY(dataStruct) 
+                        && !IS_MAP(dataStruct)) {
+                    runtimeError("Indexed element is not an array or dictionary");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                if (IS_ARRAY(dataStruct)) {
+                    if (!setArray(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
+                        ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
+                        runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), type->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                } else {
+                    if (!tableSet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), setValue)) {
+                        ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
+                        runtimeError("Error in setting entry %s, elem of type %s of map", AS_STRING(elementIndex), type->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                }
                 
-                if (!IS_NUMBER(elementIndex)) {
-                    runtimeError("Array index expression must evaluate to positive integer.");
-                    return INTERPRET_RUNTIME_ERROR;
+                pop();
+                break;
+            }
+            case OP_GET_ELEMENT_FROM_TOP: {
+                Value elem;
+                Obj* dataStruct = AS_OBJ(peek(0));
+                Value elemIndex = peek(1);
+
+                printValue(elemIndex);
+
+                switch (dataStruct->type) {
+                    case OBJ_ARRAY: {
+                        if (elemIndex.type != VAL_NUMBER) {
+                            runtimeError("Index must evaluate to positive integer for arrays");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        if (!getArray(AS_ARRAY((peek(0))), AS_NUMBER(elemIndex), &elem)) {
+                            runtimeError("Error in getting element from array");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
+                    }
+                    case OBJ_DICTIONARY: {
+                        if (!IS_STRING(elemIndex)) {
+                            runtimeError("Index must evaluate to string for dictionaries");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        if (!tableGet(&AS_MAP(peek(0))->map, AS_STRING(elemIndex), &elem)) {
+                            runtimeError("Value not found");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
+                    }
+
+        
+                    default:
+                    runtimeError("Value must be an addressable type");
+                    return INTERPRET_COMPILE_ERROR;
                 }
 
-                if (!IS_ARRAY(*frame->closure->upvalues[index]->location)) {
-                    runtimeError("Indexed variable is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+                pop();
+                pop();
+                push(elem);
 
-                if (!setArray(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
-                    ObjString* name = valueTypeToString(AS_ARRAY(*frame->closure->upvalues[index]->location)->type);
-                    runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                printf("Exit from set\n");
+                break;
+            }
+            case OP_SWAP: {
+                int a = READ_BYTE();
+                int b = READ_BYTE();
+                Value first = peek(a);
+                Value second = peek(b);
+
+                *(vm.stackTop - 1 - a) =  second;
+                *(vm.stackTop - 1 - b) = first;
                 break;
             }
             case OP_SAVE_INDEX: {

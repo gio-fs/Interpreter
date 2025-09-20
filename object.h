@@ -32,6 +32,7 @@ typedef struct {
     Obj obj;
     int arity;
     int upvalueCount;
+    bool isLambda;
     Chunk chunk;
     ObjString* name;
 } ObjFunction;

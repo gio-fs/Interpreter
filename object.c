@@ -28,6 +28,7 @@ ObjFunction* newFunction() {
 
     function->arity = 0;
     function->upvalueCount = 0;
+    function->isLambda = false;
     function->name = NULL;
     initChunk(&function->chunk);
     return function;
@@ -48,8 +49,11 @@ bool appendArray(ObjArray* arr, Value value) {
         // error, vm handles this
         return false;
     }
-
+    
+    push(OBJ_VAL(arr));
     writeValueArray(&arr->values, value);
+    pop();
+
     return true;
 }
 
@@ -69,7 +73,6 @@ bool getArray(ObjArray* arr, int index, Value* value) {
 
     *value = arr->values.values[index];
     return true;
-
 }
 
 ObjClosure* newClosure(ObjFunction* function) {
@@ -84,7 +87,6 @@ ObjClosure* newClosure(ObjFunction* function) {
     closure->upvalueCount = function->upvalueCount;
     closure->function = function;
     return closure;
-
 }
 
 ObjNative* newNative(NativeFn function) {
@@ -129,7 +131,9 @@ ObjString* allocateString(char* chars, int length, uint32_t hash) {
     string->chars[length] = '\0';
     string->hash = hash;
 
+    push(OBJ_VAL(string));
     tableSet(&vm.strings, string, NIL_VAL);
+    pop();
 
     return string;
 }
@@ -175,7 +179,7 @@ static void printFunction(ObjFunction* function) {
 void printObject(Value value) {
     switch(OBJ_TYPE(value)) {
         case OBJ_FUNCTION: {
-            printf("%s", AS_FUNCTION(value));
+            printFunction(AS_FUNCTION(value));
             break;
         }
         case OBJ_STRING: {

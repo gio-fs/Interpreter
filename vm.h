@@ -36,6 +36,7 @@ typedef struct {
     int grayCount;
     int grayCapacity;
     Obj** grayStack;
+    bool isCollecting;
 } VM;
 
 typedef enum {
@@ -48,6 +49,8 @@ extern VM vm;
 
 void initVM();
 void freeVM();
+Value pop();
+void push(Value value);
 InterpretResult interpret(const char* source);
 void runtimeError(const char* format, ...);
 ObjString* valueTypeToString(ValueType type);

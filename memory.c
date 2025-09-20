@@ -3,7 +3,7 @@
 #include "memory.h"
 #include "common.h"
 #include "vm.h"
-
+#define GC_HEAP_GROW_FACTOR 2
 
 #ifdef DEBUG_LOG_GC
 #include <stdio.h>
@@ -19,7 +19,11 @@ void* reallocate(void* ptr, size_t oldSize, size_t newSize) {
     #endif
     }
 
-    if(newSize == 0) {
+    if (vm.bytesAllocated > vm.nextGC && !vm.isCollecting) {
+        collectGarbage();
+    }
+
+    if (newSize == 0) {
         free(ptr);
         return NULL;
     }
@@ -38,6 +42,9 @@ void markObj(Obj* obj) {
     printValue(OBJ_VAL(obj));
     printf("\n");
 #endif
+    // for (int i = 0; i < 9000; i++) printf("[MARKOBJ] %p type=%d marked=%d grayCount=%d\n",
+    //   (void*)obj, obj->type, obj->isMarked, vm.grayCount);
+
 
     obj->isMarked = true;
 
@@ -53,44 +60,59 @@ void markObj(Obj* obj) {
 
 void freeObject(Obj* obj) {
 #ifdef DEBUG_LOG_GC
-    printf("%p free type %d\n", (void*)obj, obj->type);
+    printf("[FREE_OBJ] %p type=%d\n", (void*)obj, obj->type);
 #endif
+
     switch (obj->type) {
         case OBJ_FUNCTION: {
             ObjFunction* function = (ObjFunction*)obj;
             freeChunk(&function->chunk);
-            FREE(ObjFunction, obj);
-            break;   
+            reallocate(function, sizeof(ObjFunction), 0);
+            break;
         }
+
         case OBJ_STRING: {
             ObjString* string = (ObjString*)obj;
-            FREE(ObjString, obj);
-            break;     
+#ifdef DEBUG_LOG_GC
+            printf("  len=%d size=%zu\n", string->length,
+                   sizeof(ObjString) + string->length + 1);
+#endif
+            // chars[] is a flexible array member: it's part of the same
+            // memory and should be deallocated only one time
+            reallocate(string, sizeof(ObjString) + string->length + 1, 0);
+            break;
         }
+
         case OBJ_ARRAY: {
             ObjArray* arr = (ObjArray*)obj;
-            FREE(ObjArray, obj);
-            break;     
+            reallocate(arr->values.values, sizeof(Value) * arr->values.capacity,0);
+            reallocate(arr, sizeof(ObjArray), 0);
+            break;
         }
+
         case OBJ_NATIVE: {
-            FREE(ObjNative, obj);
-            break;     
+            reallocate(obj, sizeof(ObjNative), 0);
+            break;
         }
+
         case OBJ_CLOSURE: {
             ObjClosure* closure = (ObjClosure*)obj;
-            FREE(ObjClosure, obj);
-            break;     
+            reallocate(closure, sizeof(ObjClosure), 0);
+            break;
         }
+
         case OBJ_UPVALUE: {
-            ObjUpvalue* upvalue = (ObjUpvalue*)obj;
-            FREE(ObjUpvalue, obj);
-            break;     
+            reallocate(obj, sizeof(ObjUpvalue), 0);
+            break;
         }
+
         case OBJ_DICTIONARY: {
-            ObjDictionary* upvalue = (ObjDictionary*)obj;
-            FREE(ObjDictionary, obj);
-            break;     
-        } 
+            ObjDictionary* dict = (ObjDictionary*)obj;
+            freeTable(&dict->map); // deve solo liberare, no alloc
+            reallocate(dict->entries.entries, sizeof(Entry) * dict->entries.capacity, 0);
+            reallocate(dict, sizeof(ObjDictionary), 0);
+            break;
+        }
     }
 }
 
@@ -134,46 +156,77 @@ static void markRoots() {
     markCompilerRoots();
 }
 
+static const char* typeName(ObjType type) {
+    switch (type) {
+        case OBJ_FUNCTION:   return "function";
+        case OBJ_STRING:     return "string";
+        case OBJ_ARRAY:      return "array";
+        case OBJ_NATIVE:     return "native";
+        case OBJ_CLOSURE:    return "closure";
+        case OBJ_UPVALUE:    return "upvalue";
+        case OBJ_DICTIONARY: return "dictionary";
+        default:             return "unknown";
+    }
+}
+
 static void blackenObject(Obj* obj) {
 #ifdef DEBUG_LOG_GC
-    printf("%p blacken ", (void*)obj);
-    printValue(OBJ_VAL(obj));
-    printf("/n");
+    fprintf(stderr, "[BLACKEN] %p type=%s\n", (void*)obj, typeName(obj->type));
 #endif
 
     switch (obj->type) {
-        case OBJ_UPVALUE: 
+        case OBJ_UPVALUE: {
+#ifdef DEBUG_LOG_GC
+            fprintf(stderr, "  -> mark upvalue->closed\n");
+#endif
             markValue(((ObjUpvalue*)obj)->closed);
             break;
-        case OBJ_FUNCTION:
+        }
+        case OBJ_FUNCTION: {
             ObjFunction* func = (ObjFunction*)obj;
+#ifdef DEBUG_LOG_GC
+            fprintf(stderr, "  -> mark name=%p\n", (void*)func->name);
+            fprintf(stderr, "  -> mark %d constants\n", func->chunk.constants.count);
+#endif
             markObj((Obj*)func->name);
             markArray(&func->chunk.constants);
             break;
-        case OBJ_CLOSURE: 
-            ObjClosure* closure = (ObjClosure*)closure;
+        }
+        case OBJ_CLOSURE: {
+            ObjClosure* closure = (ObjClosure*)obj;
+#ifdef DEBUG_LOG_GC
+            fprintf(stderr, "  -> mark function=%p\n", (void*)closure->function);
+            fprintf(stderr, "  -> mark %d upvalues\n", closure->upvalueCount);
+#endif
             markObj((Obj*)closure->function);
             for (int i = 0; i < closure->upvalueCount; i++) {
                 markObj((Obj*)closure->upvalues[i]);
             }
             break;
-        case OBJ_DICTIONARY:
-            ObjDictionary* dict = (ObjDictionary*)dict;
+        }
+        case OBJ_DICTIONARY: {
+            ObjDictionary* dict = (ObjDictionary*)obj;
+#ifdef DEBUG_LOG_GC
+            fprintf(stderr, "  -> mark dictionary map\n");
+#endif
             markTable(&dict->map);
-            for (int i = 0; i < dict->map.count; i++) {
-                markObj((Obj*)dict->entries.entries[i].key);
-                markValue(dict->entries.entries[i].value);
-            }
+            freeEntryList(&dict->entries);
             break;
-        case OBJ_ARRAY:
+        }
+        case OBJ_ARRAY: {
+#ifdef DEBUG_LOG_GC
+            fprintf(stderr, "  -> mark array values (%d)\n", ((ObjArray*)obj)->values.count);
+#endif
             markArray(&((ObjArray*)obj)->values);
             break;
-
+        }
         case OBJ_NATIVE:
         case OBJ_STRING:
+            // Nessun riferimento da marcare
             break;
     }
 }
+
 static void traceReferences() {
     while (vm.grayCount > 0) {
         Obj* obj = vm.grayStack[--vm.grayCount];
@@ -181,43 +234,49 @@ static void traceReferences() {
     }
 }
 
-static void sweep() {
-    Obj* prev = NULL;
-    Obj* obj = vm.objects;
-    while (obj != NULL) {
-        if (obj->isMarked) {
-            obj->isMarked = false; // we need the objects to be white in the next collection
-            prev = obj;
-            obj = obj->next;
+static void sweep(void) {
+    Obj* previous = NULL;
+    Obj* object = vm.objects;
+    while (object != NULL) { 
+        if (object->isMarked) {
+            object->isMarked = false;
+            previous = object;
+            object = object->next;
         } else {
-            Obj* unreached = obj;
+            Obj* unreached = object;
 
-            // updating linked list when finding an unreached obj
-            obj = obj->next;
-            if (prev != NULL) {
-                prev->next = obj;
+            object = object->next;
+            if (previous != NULL) {
+                previous->next = object;
             } else {
-                vm.objects = obj;
+                vm.objects = object;
             }
-
-            freeObject(unreached);
+      
+            freeObject(unreached); 
         }
     }
 }
 
+
 void collectGarbage() {
 #ifdef DEBUG_LOG_GC
-    printf("--gc begin\n");
+    // for (int i = 0; i < 10000; i++) printf("--gc begin\n");
+    size_t before = vm.bytesAllocated;
 #endif
+    vm.isCollecting = true;
 
     markRoots();
     traceReferences();
     tableRemoveWhite(&vm.strings);
     sweep();
 
+    vm.nextGC = vm.bytesAllocated * GC_HEAP_GROW_FACTOR;
+    vm.isCollecting = false;
 
 #ifdef DEBUG_LOG_GC
-    printf("--end\n");
+    // for (int i = 0; i < 10000; i++) printf("--end\n");
+    printf("    Collected %ld bytes (from %ld to %ld), next at %ld\n", 
+                    before - vm.bytesAllocated, before, vm.bytesAllocated, vm.nextGC);
 #endif
 
 }

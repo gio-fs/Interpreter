@@ -19,13 +19,11 @@ void writeValueArray(ValueArray* arr,  Value value) {
         arr->values = GROW_ARRAY(Value, arr->values, oldCapacity, arr->capacity);
     }
 
-    arr->values[arr->count] = value;
-    arr->count++;
+    arr->values[arr->count++] = value;
 }
 
 
 void freeValueArray(ValueArray* arr) {
-
     FREE_ARRAY(uint8_t, arr->values, arr->capacity);
     initValueArray(arr);
 }
