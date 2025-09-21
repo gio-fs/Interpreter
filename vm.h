@@ -6,7 +6,6 @@
 #include "object.h"
 
 
-
 typedef struct {
     ObjClosure* closure;
     uint8_t* ip;
@@ -27,7 +26,9 @@ typedef struct {
     Table strings;
     Table globals;
     Table constGlobals;
-    Table temps;
+    ValueArray queue[64];
+    int firstIn[64];
+    int nestingLevel;
     ObjUpvalue* openUpvalues;
 
     size_t bytesAllocated;

@@ -12,10 +12,22 @@
 #include "clox_debug.h"
 #include "vm.h"
 
+#define MAX_NESTING_LVL 64
+
 VM vm;
 
+
+#include <time.h>
+#include <stdint.h>
+
+double highres_time(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
 static Value clockNative(int argCount, Value* args) {
-    return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+    return NUMBER_VAL(highres_time());
 }
 
 
@@ -244,6 +256,33 @@ static ObjString* valueToString(Value value) {
     return copyString("object", 6);
 }
 
+
+static bool queue(ValueArray* arr) {
+    if (vm.nestingLevel < 0) {
+        return false;
+    }
+
+    if (arr->capacity < arr->count + 1) {
+        int oldCapacity = arr->capacity;
+        arr->capacity = GROW_CAPACITY(oldCapacity);
+        arr->values = GROW_ARRAY(Value, arr->values, oldCapacity, arr->capacity);
+    }
+
+    arr->values[arr->count] = peek(0);
+    arr->count++;
+    return true;
+}
+
+static bool deque(ValueArray* arr, Value* value) {
+    if (vm.nestingLevel < 0) {
+        return false;
+    }
+
+    *value = arr->values[vm.firstIn[vm.nestingLevel]];
+    return true;
+}
+
+
 static void concatenate() {
 
     ObjString* b = valueToString(peek(0));
@@ -270,7 +309,8 @@ static void concatenate() {
 
 
 static bool isIterable(Value value) {
-    return AS_OBJ(value)->type == OBJ_ARRAY || AS_OBJ(value)->type == OBJ_DICTIONARY;
+    if (IS_OBJ(value)) return AS_OBJ(value)->type == OBJ_ARRAY || AS_OBJ(value)->type == OBJ_DICTIONARY;
+    else return false;
 }
 
 
@@ -282,20 +322,25 @@ void initVM() {
     vm.openUpvalues = NULL;
     vm.objects = NULL;
     vm.bytesAllocated = 0;
-    vm.nextGC = 1024 * 1024;
+    vm.nextGC = 1024 * 1024; 
 
     vm.grayCount = 0;
     vm.grayCapacity = 0;
     vm.grayStack = NULL;
 
     vm.isCollecting = false;
-
+    
+    
+    initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
+
+    
+    
 
     initTable(&vm.strings);
     initTable(&vm.globals);
     initTable(&vm.constGlobals);
-    initTable(&vm.temps);
+
 
     defineNative("clock", clockNative);
 }
@@ -303,6 +348,11 @@ void initVM() {
 void freeVM() {
     
     freeCallFrameArray(&vm.frameArray);
+    freeValueArray(&vm.queue[0]);
+
+    for (int i = 0; i < MAX_NESTING_LVL; i++) {
+        vm.firstIn[i] = 0;
+    }
 
     FREE_ARRAY(Value, vm.stack.values, vm.stack.capacity);
     vm.stack.capacity = 0;
@@ -311,7 +361,7 @@ void freeVM() {
     freeTable(&vm.strings);
     freeTable(&vm.globals);
     freeTable(&vm.constGlobals);
-    freeTable(&vm.temps);
+    
     freeObjects();
 }
 
@@ -513,8 +563,7 @@ static InterpretResult run() {
                 push(OBJ_VAL(arr));
 
                 for (int i = length - 1; i >= 0; i--) {
-                    bool hasAppended = appendArray(arr, peek(i));
-                    if (!hasAppended) {
+                    if (!appendArray(arr, peek(i + 1))) {
                         ObjString* errorType = valueTypeToString(peek(i).type);
                         ObjString* arrType = valueTypeToString(firstElementType);
                         runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
@@ -522,14 +571,17 @@ static InterpretResult run() {
                     }
                 }
 
-                for (int i = length - 1; i >= 0; i--) {
+                for (int i = length; i >= 0; i--) {
                     pop();
                 }
+
 
                 if (arr->values.count == 0) {
                     arr->type = VAL_NIL;
                     appendArray(arr, NIL_VAL);
                 }
+
+                push(OBJ_VAL(arr));
 
                 break;
             }
@@ -542,8 +594,7 @@ static InterpretResult run() {
                 push(OBJ_VAL(arr));
 
                 for (int i = length - 1; i >= 0; i--) {
-                    bool hasAppended = appendArray(arr, peek(i));
-                    if (!hasAppended) {
+                    if (!appendArray(arr, peek(i))) {
                         ObjString* errorType = valueTypeToString(peek(i).type);
                         ObjString* arrType = valueTypeToString(firstElementType);
                         runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
@@ -663,7 +714,7 @@ static InterpretResult run() {
 
                 ObjArray* cachedArr = AS_ARRAY(frame->slots[slot]);
                 Value element;
-                if (!getArray(cachedArr, AS_NUMBER(elementIndex), &element)){
+                if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
                     runtimeError("Index out of bounds.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -674,86 +725,95 @@ static InterpretResult run() {
            case OP_GET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value elementIndex = pop();
+                Value value;
 
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Index must evaluate to positive integer for an array or to a string for dictionaries.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+                switch (AS_OBJ(frame->slots[slot])->type) {
+                    case OBJ_ARRAY: {
+                        if (!IS_NUMBER(elementIndex)) {
+                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
 
-                if (IS_STRING(elementIndex)) {
-                    if (!IS_MAP(frame->slots[slot])) {
-                        runtimeError("Element must be a dictionary");
-                        return INTERPRET_RUNTIME_ERROR;
+                        ObjArray* arr = AS_ARRAY(frame->slots[slot]);
+                        int index = AS_NUMBER(elementIndex);
+
+                        if (!arrayGet(arr, index, &value)) {
+                            ObjString* name = valueTypeToString(arr->type);
+                            runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
                     }
-                    
-                    ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                    ObjString* key = AS_STRING(elementIndex);
-                    Value value;
+                    case OBJ_DICTIONARY: {
+                        if (!IS_STRING(elementIndex)) {
+                            runtimeError("Indexing expression must evaluate to string for maps");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
 
-                    if (!tableGet(&dict->map, key, &value)) {
-                        printf("DEBUG: Key '%s' not found in dictionary\n", key->chars);
-                        runtimeError("Key not found");
-                        return INTERPRET_RUNTIME_ERROR;
+                        ObjDictionary* dict = AS_MAP(frame->slots[slot]);
+                        ObjString* key = AS_STRING(elementIndex);
+
+                        if (tableGet(&dict->map, key, &value)) {
+                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
                     }
-
-                    push(value);
-                    break;
                 }
 
-                if (!IS_ARRAY(frame->slots[slot])) {
-                    runtimeError("Indexed element is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjArray* cachedArr = AS_ARRAY(frame->slots[slot]);
-                Value element;
-                if (!getArray(cachedArr, AS_NUMBER(elementIndex), &element)){
-                    runtimeError("Index out of bounds.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                
-                push(element);
+                push(value);
                 break;
             }   
             case OP_SET_ELEMENT: {
                 int slot = READ_BYTE();
-                Value setValue = pop();
+                Value setVal = pop();
                 Value elementIndex = peek(0);
                 
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Index must evaluate to a positive integer for an array or to a string for dictionaries.");
+                if (!isIterable(frame->slots[slot])) {
+                    runtimeError("Value must be of indexeable type");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                if (IS_STRING(elementIndex)) {
-                    if (!IS_MAP(frame->slots[slot])) {
-                        runtimeError("Element must be a dictionary");
-                        return INTERPRET_RUNTIME_ERROR;
+                switch (AS_OBJ(frame->slots[slot])->type) {
+                    case OBJ_ARRAY: {
+                        if (!IS_NUMBER(elementIndex)) {
+                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        ObjArray* arr = AS_ARRAY(frame->slots[slot]);
+                        int index = AS_NUMBER(elementIndex);
+
+                        if (!arraySet(arr, index, setVal)) {
+                            ObjString* name = valueTypeToString(arr->type);
+                            runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
                     }
-                    ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                    ObjString* key = AS_STRING(elementIndex);
+                    case OBJ_DICTIONARY: {
+                        if (!IS_STRING(elementIndex)) {
+                            runtimeError("Indexing expression must evaluate to string for maps");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
 
-                    if (tableSet(&dict->map, key, setValue)) {
-                        runtimeError("'%s' doesn't exist in this dictionary", key->chars);
-                        return INTERPRET_RUNTIME_ERROR;
+                        ObjDictionary* dict = AS_MAP(frame->slots[slot]);
+                        ObjString* key = AS_STRING(elementIndex);
+
+                        if (tableSet(&dict->map, key, setVal)) {
+                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
                     }
-
-                    break;
+                        
                 }
 
-                if (!IS_ARRAY(frame->slots[slot])) {
-                    runtimeError("Indexed variable is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjArray* cachedArr = AS_ARRAY(frame->slots[slot]);
-
-                if (!setArray(cachedArr, AS_NUMBER(elementIndex), setValue)) {
-                    ObjString* name = valueTypeToString(cachedArr->type);
-                    runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
+                push(setVal);
                 break;
             }
             
@@ -762,7 +822,7 @@ static InterpretResult run() {
                 Value elementIndex = pop();
                 Value arr;
 
-                if ( !IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
                     runtimeError("Array index must evaluate to positive integer.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -797,7 +857,7 @@ static InterpretResult run() {
 
                 ObjArray* cachedArr = AS_ARRAY(arr);
                 Value element;
-                if (!getArray(cachedArr, AS_NUMBER(elementIndex), &element)){
+                if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
                     runtimeError("Index out of bounds.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -810,9 +870,6 @@ static InterpretResult run() {
                 Value setValue = pop();
                 Value elementIndex = peek(0);
                 Value arr;
-                printf("element index : ");
-                printValue(elementIndex);
-                printf("\n");
 
                 if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
                     runtimeError("Array index expression must evaluate to positive integer.");
@@ -854,7 +911,7 @@ static InterpretResult run() {
 
                 ObjArray* cachedArray = AS_ARRAY(arr);
 
-                if (!setArray(cachedArray, AS_NUMBER(elementIndex), setValue)) {
+                if (!arraySet(cachedArray, AS_NUMBER(elementIndex), setValue)) {
                     ObjString* name = valueTypeToString(cachedArray->type);
                     runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
                     return INTERPRET_RUNTIME_ERROR;
@@ -865,18 +922,13 @@ static InterpretResult run() {
             }
             case OP_FOR_EACH: {
                 int arg = READ_BYTE();
-                int itArg = READ_BYTE();
-                Value iterable = frame->slots[itArg];
+                Value iterable = pop();
                 Value item;
                 int count = (int)AS_NUMBER(frame->slots[arg]);
                 
                 if (!isIterable(iterable)) {
-                    if (IS_FUNCTION(frame->slots[itArg]) 
-                            && AS_FUNCTION(frame->slots[itArg])->isLambda) iterable = frame->slots[itArg - 1];
-                    else {
-                        runtimeError("Object is not iterable");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
+                    runtimeError("Object is not iterable");
+                    return INTERPRET_RUNTIME_ERROR;
                 }
 
                 switch (AS_OBJ(iterable)->type) {
@@ -1035,7 +1087,7 @@ static InterpretResult run() {
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                if (!getArray(AS_ARRAY(pop()), AS_NUMBER(elementIndex), &element)){
+                if (!arrayGet(AS_ARRAY(pop()), AS_NUMBER(elementIndex), &element)){
                     runtimeError("Index out of bounds.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -1076,7 +1128,7 @@ static InterpretResult run() {
 
                 Value element;
                 if (IS_ARRAY(dataStruct)) {
-                    if (!getArray(AS_ARRAY(dataStruct), AS_NUMBER(elementIndex), &element)){
+                    if (!arrayGet(AS_ARRAY(dataStruct), AS_NUMBER(elementIndex), &element)){
                         runtimeError("Index out of bounds.");
                         return INTERPRET_RUNTIME_ERROR;
                     }
@@ -1112,7 +1164,7 @@ static InterpretResult run() {
                 }
 
                 if (IS_ARRAY(dataStruct)) {
-                    if (!setArray(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
+                    if (!arraySet(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
                         ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
                         runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), type->chars);
                         return INTERPRET_RUNTIME_ERROR;
@@ -1133,7 +1185,7 @@ static InterpretResult run() {
                 Obj* dataStruct = AS_OBJ(peek(0));
                 Value elemIndex = peek(1);
 
-                printValue(elemIndex);
+                //printValue(elemIndex);
 
                 switch (dataStruct->type) {
                     case OBJ_ARRAY: {
@@ -1141,7 +1193,7 @@ static InterpretResult run() {
                             runtimeError("Index must evaluate to positive integer for arrays");
                             return INTERPRET_RUNTIME_ERROR;
                         }
-                        if (!getArray(AS_ARRAY((peek(0))), AS_NUMBER(elemIndex), &elem)) {
+                        if (!arrayGet(AS_ARRAY((peek(0))), AS_NUMBER(elemIndex), &elem)) {
                             runtimeError("Error in getting element from array");
                             return INTERPRET_RUNTIME_ERROR;
                         }
@@ -1176,15 +1228,150 @@ static InterpretResult run() {
             case OP_SWAP: {
                 int a = READ_BYTE();
                 int b = READ_BYTE();
-                Value first = peek(a);
-                Value second = peek(b);
+                Value* first = vm.stackTop - 1 - a;
+                Value* second = vm.stackTop - 1 - b;
+                Value temp = *first;
 
-                *(vm.stackTop - 1 - a) =  second;
-                *(vm.stackTop - 1 - b) = first;
+                *first = *second;
+                *second = temp;
                 break;
             }
             case OP_SAVE_INDEX: {
                 push(peek(0));
+                break;
+            }
+            case OP_PUSH: {
+                int arg = READ_BYTE();
+                push(frame->slots[arg]);
+                break;
+            }
+            case OP_REVERSE_N: {
+                int n = READ_BYTE();
+                Value values[n];
+                for (int i = 0; i < n; i++) {
+                    values[i] = pop();
+                }
+
+                for (int i = 0; i < n; i++) {
+                    push(values[i]);
+                }
+
+                break;
+            }
+            case OP_QUEUE: {
+                Value value = pop();
+                writeValueArray(&vm.queue[vm.nestingLevel], value);
+                break;
+            }
+            case OP_DEQUE: {
+                if (vm.firstIn[vm.nestingLevel] >= vm.queue[vm.nestingLevel].count) {
+                    runtimeError("First element of queue is outside bounds");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                Value value;
+                if (!deque(&vm.queue[vm.nestingLevel], &value)) {
+                    runtimeError("Nesting level below zero");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                push(value);
+                break;
+            }
+            case OP_QUEUE_REWIND: {
+                if (vm.firstIn[vm.nestingLevel] > 0) {  
+                    vm.firstIn[vm.nestingLevel]--;
+                }
+                break;
+            }
+            case OP_QUEUE_ADVANCE: {
+                if (vm.firstIn[vm.nestingLevel] >= vm.queue[vm.nestingLevel].count) {
+                    runtimeError("First element of queue is outside bounds");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                vm.firstIn[vm.nestingLevel]++;
+                break;
+            }
+            case OP_QUEUE_CLEAR: {
+                vm.firstIn[vm.nestingLevel] = 0;
+                initValueArray(&vm.queue[vm.nestingLevel--]);
+                
+                if (vm.nestingLevel < 0) vm.nestingLevel++;
+                break;
+            }
+            case OP_INCREMENT_NESTING_LVL: {
+                if (vm.nestingLevel == 64) {
+                    runtimeError("Max nesting level is 64");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                vm.firstIn[vm.nestingLevel] = 0; 
+                initValueArray(&vm.queue[++vm.nestingLevel]);
+                break;
+            }
+            case OP_DECREMENT_NESTING_LVL: {
+                if (vm.nestingLevel <= 0) {
+                    runtimeError("Error: nesting level below zero");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                initValueArray(&vm.queue[vm.nestingLevel--]);
+                break;
+            }
+            case OP_INDIRECT_STORE: {
+                Value setVal = pop();
+                Value refObj = pop();
+                Value refIndex = pop();
+                
+                if (!isIterable(refObj)) {
+                    runtimeError("Value must be of indexeable type");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                switch (AS_OBJ(refObj)->type) {
+                    case OBJ_ARRAY: {
+                        if (!IS_NUMBER(refIndex)) {
+                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        ObjArray* arr = AS_ARRAY(refObj);
+                        int index = AS_NUMBER(refIndex);
+
+                        if (!arraySet(arr, index, setVal)) {
+                            ObjString* name = valueTypeToString(arr->type);
+                            runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        break;
+                    }
+                    case OBJ_DICTIONARY: {
+                        if (!IS_STRING(refIndex)) {
+                            runtimeError("Indexing expression must evaluate to string for maps");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        ObjDictionary* dict = AS_MAP(refObj);
+                        ObjString* key = AS_STRING(refIndex);
+
+                        if (tableSet(&dict->map, key, setVal)) {
+                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+
+                        
+
+                        break;
+                    }
+                        
+                }
+
+                push(setVal);
+                break;
+            }
+            case OP_CHECK_TYPE: {
+                if (!isIterable(peek(0))) push(BOOL_VAL(0));
+                else push(BOOL_VAL(1));
                 break;
             }
             case OP_CLOSE_UPVALUE: {

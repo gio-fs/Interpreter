@@ -197,6 +197,22 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return simpleInstruction("OP_PRINT", offset);
         case OP_RETURN:
             return simpleInstruction("OP_RETURN", offset);
+        case OP_PUSH:
+            return simpleInstruction("OP_PUSH", offset);
+        case OP_INCREMENT_NESTING_LVL:
+            return simpleInstruction("OP_INCREMENT_NESTING_LVL", offset);
+        case OP_DECREMENT_NESTING_LVL:
+            return simpleInstruction("OP_DECREMENT_NESTING_LVL", offset);
+        case OP_QUEUE:
+            return simpleInstruction("OP_QUEUE", offset);
+        case OP_GET_ELEMENT_FROM_TOP:
+            return simpleInstruction("OP_GET_ELEMENT_FROM_TOP", offset);
+        case OP_QUEUE_CLEAR:
+            return simpleInstruction("OP_QUEUE_CLEAR", offset);
+        case OP_REVERSE_N:
+            return byteInstruction("OP_REVERSE_N", chunk, offset);
+        case OP_DEQUE:
+            return simpleInstruction("OP_DEQUE", offset);
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;

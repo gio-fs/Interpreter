@@ -61,7 +61,8 @@ typedef struct Compiler {
     int upvaluesCount;
     int scopeDepth;
 
-    int indexingCount;
+    int nestedCount;
+    int nestedLevel;
 } Compiler;
 
 typedef struct {

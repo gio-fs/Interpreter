@@ -57,7 +57,7 @@ bool appendArray(ObjArray* arr, Value value) {
     return true;
 }
 
-bool setArray(ObjArray* arr, int index, Value value) {
+bool arraySet(ObjArray* arr, int index, Value value) {
     if ( index < 0 || index >= arr->values.count || value.type != arr->type) {
         return false;
     }
@@ -66,7 +66,7 @@ bool setArray(ObjArray* arr, int index, Value value) {
     return true;
 }
 
-bool getArray(ObjArray* arr, int index, Value* value) {
+bool arrayGet(ObjArray* arr, int index, Value* value) {
     if (index < 0 || index >= arr->values.count) {
         return false;
     }
@@ -205,7 +205,17 @@ void printObject(Value value) {
         }
         case OBJ_DICTIONARY: {
             printf("<dict>");
-            break;
+        // #ifdef DEBUG_TRACE_EXECUTION
+        //     printf(" ");
+        //     ObjDictionary* dict = AS_MAP(value);
+        //     Entry first = dict->entries.entries[0];
+        //     printf("Key: ");
+        //     printValue(OBJ_VAL(first.key));
+        //     printf(" Value: ");
+        //     printValue(first.value);
+        // #endif
+
+        break;
         }
 
              

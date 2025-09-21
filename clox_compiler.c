@@ -108,6 +108,9 @@ static void initCompiler(Compiler* compiler, FunctionType type) {
     local->isCaptured = false;
     local->isConst = false;
     local->name.length = 0; 
+
+    compiler->nestedCount = 0;
+    current->nestedLevel = 0;
 }
 
 static void errorAt(Token* token, const char* message) {
@@ -536,139 +539,112 @@ static void call(bool canAssign) {
     emitBytes(OP_CALL, argCount);
 }
 
-static void setVariable(OpCode opcodes[], int indexingCount, int arg, bool isArray) {
+static void setVariable(OpCode opcodes[], int arg) {
+
     if (arg <= UINT8_MAX) {
-        if (isArray) {
-            emitBytes(opcodes[3], (uint8_t)arg);
+        emitBytes(opcodes[1], (uint8_t)arg);   
 
-            for (int i = 0; i < indexingCount - 1; i++) {
-                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
-                emitByte(OP_GET_ELEMENT_FROM_TOP);
-            }
-
-        }
-        else emitBytes(opcodes[1], (uint8_t)arg);
-            
-    } else {
-        if (isArray) {
-            emitFourBytes(opcodes[3], (uint8_t)((arg & 0x000000ff)), 
-                                      (uint8_t)((arg & 0x0000ff00) >> 8),
-                                      (uint8_t)((arg & 0x00ff0000) >> 16));
-
-            for (int i = 0; i < indexingCount - 1; i++) {
-                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
-                emitByte(OP_GET_ELEMENT_FROM_TOP);
-            }
-
-        } else emitFourBytes(opcodes[1], (uint8_t)((arg & 0x000000ff)), 
+    } else emitFourBytes(opcodes[1], (uint8_t)((arg & 0x000000ff)), 
                                          (uint8_t)((arg & 0x0000ff00) >> 8),
                                          (uint8_t)((arg & 0x00ff0000) >> 16));
-    } 
 }
 
-static void getVariable(OpCode opcodes[], int indexingCount, int arg, bool isArray) {
+static void getVariable(OpCode opcodes[], int arg) {
+
     if (arg <= UINT8_MAX) {
-        if (isArray) {
-            emitBytes(opcodes[2], (uint8_t)arg);
+        emitBytes(opcodes[0], (uint8_t)arg);
 
-            for (int i = 0; i < indexingCount - 1; i++) {
-                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
-                emitByte(OP_GET_ELEMENT_FROM_TOP);
-            }
-
-        } else emitBytes(opcodes[0], (uint8_t)arg);
-            
-    } else {
-        if (isArray) {
-            emitFourBytes(opcodes[2], (uint8_t)((arg & 0x000000ff)), 
-                                      (uint8_t)((arg & 0x0000ff00) >> 8),
-                                      (uint8_t)((arg & 0x00ff0000) >> 16));
-
-            for (int i = 0; i < indexingCount - 1; i++) {
-                if (i > 0) emitThreeBytes(OP_SWAP, 0, 1);
-                emitByte(OP_GET_ELEMENT_FROM_TOP);
-            }
-
-        } else emitFourBytes(opcodes[0], (uint8_t)((arg & 0x000000ff)), 
+    } else emitFourBytes(opcodes[0], (uint8_t)((arg & 0x000000ff)), 
                                          (uint8_t)((arg & 0x0000ff00) >> 8),
                                          (uint8_t)((arg & 0x00ff0000) >> 16));
-    } 
+    
 }
 
 static int namedVariable(Token name, bool canAssign) {
 
     int arg = resolveLocal(current, &name);
-    bool isArray = false;
     int _indexingCount = 0;
+    bool compoundAssign = false;
 
-    OpCode getOp, setOp, setArrOp, getArrOp;
+    OpCode getOp, setOp, setElemOp, getElemOp;
     
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
-        getArrOp = OP_GET_ELEMENT;
-        setArrOp = OP_SET_ELEMENT;
+        getElemOp = OP_GET_ELEMENT;
+        setElemOp = OP_SET_ELEMENT;
     } else if ((arg = resolveUpvalue(current, &name)) != -1) {
         getOp = OP_GET_UPVALUE;
         setOp = OP_SET_UPVALUE;
-        getArrOp = OP_GET_ELEMENT_UPVALUE;
-        setArrOp = OP_SET_ELEMENT_UPVALUE;
+        getElemOp = OP_GET_ELEMENT_UPVALUE;
+        setElemOp = OP_SET_ELEMENT_UPVALUE;
     } else if ((arg = identifierConstant(&name)) <= UINT8_MAX) {
         getOp = OP_GET_GLOBAL;
         setOp = OP_SET_GLOBAL;
-        getArrOp = OP_GET_ELEMENT_GLOBAL;
-        setArrOp = OP_SET_ELEMENT_GLOBAL;
+        getElemOp = OP_GET_ELEMENT_GLOBAL;
+        setElemOp = OP_SET_ELEMENT_GLOBAL;
     } else {
         getOp = OP_GET_GLOBAL_LONG;
         setOp = OP_SET_GLOBAL_LONG;
-        getArrOp = OP_GET_ELEMENT_GLOBAL_LONG;
-        setArrOp = OP_SET_ELEMENT_GLOBAL_LONG;
+        getElemOp = OP_GET_ELEMENT_GLOBAL_LONG;
+        setElemOp = OP_SET_ELEMENT_GLOBAL_LONG;
     }
 
-    OpCode opcodes[4] = {getOp, setOp, getArrOp, setArrOp};
+    OpCode opcodes[4] = {getOp, setOp, getElemOp, setElemOp};
 
     while (match(TOKEN_LEFT_SQUARE_BRACE)) {
         expression();
         consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
         _indexingCount++;
-        isArray = true;
     }
 
-    for (int i = 0; i < _indexingCount - 1; i++) emitThreeBytes(OP_SWAP, i, i + 1);
-
-    bool compoundAssign = match(TOKEN_MINUS_EQUAL) || match(TOKEN_PLUS_EQUAL);
+    compoundAssign = match(TOKEN_MINUS_EQUAL) || match(TOKEN_PLUS_EQUAL);
     TokenType compoundType;
-    uint8_t _arg;
     if (compoundAssign) compoundType = parser.previous.type;
 
-    if (isArray && compoundAssign) {
-        Token slot = makeSyntheticToken("__index_slot");
-        addLocal(slot, false);
-        markInitialized();
-        _arg = resolveLocal(current, &slot);
-        emitBytes(OP_SET_LOCAL, _arg);
-        emitByte(OP_SAVE_INDEX);
+    if (_indexingCount > 0) {
+        emitBytes(OP_REVERSE_N, _indexingCount);
+        emitBytes(getElemOp, arg);
+
+        // if we want to assign to an indirect variable we have to keep
+        // on the stack the index/indexeable pair for OP_INDIRECT_STORE
+        // and thus lower by one the indexing count
+        if (canAssign && checkType(TOKEN_EQUAL)) _indexingCount--;
+
+        // -1 because if it's one we just get the element of the corresponding
+        // indexeable variable at arg, whether it's local or global
+        for (int i = 0; i < _indexingCount - 1; i++) {
+            emitByte(OP_GET_ELEMENT_FROM_TOP);
+        }
+
+        if (canAssign && match(TOKEN_EQUAL)) {
+            parsePrecedence(PREC_EQUALITY);
+            emitByte(OP_INDIRECT_STORE);
+
+            if (compoundAssign) {
+                compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
+                setVariable(opcodes, arg);
+            }
+        } 
+
+        return arg;
     }
 
-    if (canAssign && (match(TOKEN_EQUAL) || match(TOKEN_PLUS_EQUAL) || match(TOKEN_MINUS_EQUAL))) {
+    if (canAssign && match(TOKEN_EQUAL)) {
         if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
             error("Cannot assign to const variable.");
         }
 
         expression(); 
-        setVariable(opcodes, _indexingCount, arg, isArray);
+        setVariable(opcodes, arg);
 
-    } else getVariable(opcodes, _indexingCount, arg, isArray);
-
-    if (canAssign && compoundAssign) {
-        if (isArray) emitBytes(OP_GET_LOCAL, _arg);
-
-        setVariable(opcodes, _indexingCount, arg, isArray);
+    } else if (canAssign && compoundAssign) {
+        setVariable(opcodes, arg);
         expression();
         compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
-        setVariable(opcodes, _indexingCount, arg, isArray);
-    }
+        setVariable(opcodes, arg);
 
+    } else getVariable(opcodes, arg);
 
     return arg;
 }
@@ -930,6 +906,8 @@ static void whileStatement() {
 static void forEachStatement(BreakEntries* breakEntries) {
     beginScope();
 
+    current->nestedLevel++;
+    // Iterator variable
     addLocal(parser.current, false);
     markInitialized();
     uint8_t arg = resolveLocal(current, &parser.current);
@@ -937,6 +915,7 @@ static void forEachStatement(BreakEntries* breakEntries) {
     emitConstant(NIL_VAL);
     emitBytes(OP_SET_LOCAL, arg);
 
+    // Counter variable
     Token count = makeSyntheticToken("__for_each_count");
     addLocal(count, false);
     markInitialized();
@@ -946,53 +925,31 @@ static void forEachStatement(BreakEntries* breakEntries) {
     emitBytes(OP_SET_LOCAL, _arg);
     
     advance();
-
     consume(TOKEN_IN, "Expect keyword 'in' after identifier.");
 
+    // Parse the iterable
     Token itName = parser.current;
     advance();
-    int indexingCount = 0;
-    uint32_t globalIt = 0;
-    int itArg = 0;
-    int itUpvalArg = 0;
-    uint8_t _IndexingExpr;
+    int itArg = namedVariable(itName, false);
 
-    if ((itArg = resolveLocal(current, &itName)) == -1) {
-        if ((itUpvalArg = resolveUpvalue(current, &itName)) == -1) {
-            globalIt = identifierConstant(&itName);
-        }
-    }
+    bool isNested = current->nestedCount > 0;
     
-    while (match(TOKEN_LEFT_SQUARE_BRACE)) {
-        expression();
-        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
-        indexingCount++;
-
-        Token indexingExpr = makeSyntheticToken("__for_each_indexing");
-        addLocal(indexingExpr, false);
-        markInitialized();
-        _IndexingExpr = resolveLocal(current, &indexingExpr);
-        
-        if (globalIt == 0) 
-                itUpvalArg == 0? 
-                    emitBytes(OP_GET_ELEMENT, (uint8_t)itArg) : emitBytes(OP_GET_ELEMENT_UPVALUE, (uint8_t)itUpvalArg);
-        else {
-            if (globalIt <= UINT8_MAX) emitBytes(OP_GET_ELEMENT_GLOBAL, (uint8_t)globalIt);
-            else emitFourBytes(OP_GET_ELEMENT_GLOBAL_LONG, (uint8_t)((globalIt & 0x000000ff)), 
-                                                           (uint8_t)((globalIt & 0x0000ff00) >> 8),
-                                                           (uint8_t)((globalIt & 0x00ff0000) >> 16));
-        }
+    if (isNested) {
+        emitByte(OP_INCREMENT_NESTING_LVL);
+        emitByte(OP_QUEUE);
+        current->nestedCount++;
+    } else { 
+        emitBytes(OP_PUSH, itArg);
+        emitByte(OP_QUEUE);
+        current->nestedCount = 1;
     }
 
     int loopStart = currentChunk()->count;
     int exitJump = -1;
 
-    if (globalIt == 0) 
-            indexingCount == 0? 
-                emitThreeBytes(OP_FOR_EACH, _arg, itArg) : emitThreeBytes(OP_FOR_EACH, _arg, _IndexingExpr);
-    else {
-        emitThreeBytes(OP_FOR_EACH_GLOBAL, _arg, globalIt);
-    }
+   
+    emitByte(OP_DEQUE);
+    emitBytes(OP_FOR_EACH, _arg);
 
     emitBytes(OP_GET_LOCAL, _arg);
     emitByte(OP_GREATER);
@@ -1002,18 +959,28 @@ static void forEachStatement(BreakEntries* breakEntries) {
 
     loopStatement(loopStart, breakEntries);
 
+    
     emitBytes(OP_GET_LOCAL, _arg);
-    emitConstant((NUMBER_VAL(1)));
+    emitConstant(NUMBER_VAL(1));
     emitByte(OP_ADD);
     emitBytes(OP_SET_LOCAL, _arg);
     emitByte(OP_POP);
+
     
+    emitByte(OP_QUEUE_REWIND);
     emitLoop(loopStart);
 
     if (exitJump != -1) {
         patchJump(exitJump);
         emitByte(OP_POP);
     }
+
+    current->nestedCount--;
+    if (current->nestedCount > 0) {
+        emitByte(OP_DECREMENT_NESTING_LVL);
+    }
+    
+    // emitByte(OP_QUEUE_ADVANCE);
 
     endScope();
 }
@@ -1025,6 +992,11 @@ static void forStatement() {
 
     if (checkType(TOKEN_IDENTIFIER)) {
         forEachStatement(&breakEntries);
+        if (current->nestedCount == 0) {
+            for (int i = 0; i < current->nestedLevel; i++) {
+                emitByte(OP_QUEUE_CLEAR);
+            }
+        }
         return;
     }
 
@@ -1080,7 +1052,6 @@ static void forStatement() {
     if (exitJump != -1) {
         patchJump(exitJump);
         emitByte(OP_POP);
-
     }
 
     for (int i = 0; i < breakEntries.breakCount; i++) {
