@@ -726,14 +726,12 @@ static void variable(bool canAssign) {
 
 static void array(bool canAssign) {
     uint32_t elementsCount = 0;
-    do {
-        if (checkType(TOKEN_RIGHT_SQUARE_BRACE)) {
-            consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
-            break;
-        }
+
+    while (!checkType(TOKEN_RIGHT_SQUARE_BRACE) ) {
         expression();
         elementsCount++;
-    } while (matchCurrent(TOKEN_COMMA));
+        matchCurrent(TOKEN_COMMA);
+    }
 
     if (matchCurrent(TOKEN_DOUBLE_DOTS)) {
         emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
@@ -747,6 +745,8 @@ static void array(bool canAssign) {
         return;
     }
 
+    consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
+
     if (elementsCount < 256) emitBytes(OP_ARRAY, (uint8_t)elementsCount);
     else emitFourBytes(OP_ARRAY_LONG, (uint8_t)((elementsCount & 0x000000ff)),
                                       (uint8_t)((elementsCount & 0x0000ff00) >> 8),
@@ -756,17 +756,16 @@ static void array(bool canAssign) {
 static void dict(bool canAssign) {
     uint32_t totalCount = 0;
 
-    do {
-        if (checkType(TOKEN_RIGHT_BRACE)) {
-            consume(TOKEN_RIGHT_BRACE, "Expect '}' after dictionary initialization");
-            break;
-        }
+    while (!checkType(TOKEN_RIGHT_BRACE)) {
         expression();
         totalCount++;
         consume(TOKEN_COLON, "Expect ':' after key value");
         expression();
         totalCount++;
-    } while (matchCurrent(TOKEN_COMMA));
+        matchCurrent(TOKEN_COMMA);
+    }
+
+    consume(TOKEN_RIGHT_BRACE, "Expect '}' after dictionary initialization");
 
     if (totalCount < 256) emitBytes(OP_MAP, (uint8_t)totalCount);
     else emitFourBytes(OP_MAP_LONG, (uint8_t)((totalCount & 0x000000ff)),
