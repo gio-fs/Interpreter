@@ -120,8 +120,8 @@ typedef struct {
 #define AS_INSTANCE(value)      ((ObjInstance*)AS_OBJ(value))
 #define AS_BOUND_METHOD(value)  ((ObjBoundMethod*)AS_OBJ(value))
 
-ObjFunction* newFunction(); 
-ObjArray* newArray(ValueType type);
+ObjFunction* newFunction();
+ObjArray* newArray();
 ObjClosure* newClosure(ObjFunction* function);
 ObjUpvalue*newUpvalue(Value* value);
 ObjDictionary* newDictionary();

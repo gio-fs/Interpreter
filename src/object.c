@@ -33,10 +33,10 @@ ObjFunction* newFunction() {
     return function;
 }
 
-ObjArray* newArray(ValueType type) {
+ObjArray* newArray() {
     ObjArray* arr = ALLOCATE_OBJ(ObjArray, OBJ_ARRAY);
 
-    arr->type = type;
+    arr->type = VAL_NIL;
     arr->values.values = NULL;
     arr->values.count = 0;
     arr->values.capacity = 0;
@@ -48,11 +48,14 @@ ObjArray* newArray(ValueType type) {
 }
 
 bool appendArray(ObjArray* arr, Value value) {
+    if (arr->values.count == 0) {
+        arr->type = value.type;
+    }
     if (value.type != arr->type) {
         // error, vm handles this
         return false;
     }
-    
+
     push(OBJ_VAL(arr));
     writeValueArray(&arr->values, value);
     pop();
@@ -81,7 +84,7 @@ bool arrayGet(ObjArray* arr, int index, Value* value) {
 ObjClosure* newClosure(ObjFunction* function) {
     ObjClosure* closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
     ObjUpvalue** upvalues = ALLOCATE(ObjUpvalue*, function->upvalueCount);
-    
+
     for (int i = 0; i <= function->upvalueCount - 1; i++) {
         upvalues[i] = NULL;
     }
@@ -199,7 +202,7 @@ ObjString* copyString(const char* chars, int length) {
 static void printFunction(ObjFunction* function) {
     if (function->name == NULL) {
         printf("<script>");
-        
+
         return;
     }
     printf("<fn %s>", function->name->chars);
@@ -259,6 +262,6 @@ void printObject(Value value) {
             break;
         }
 
-             
+
     }
 }

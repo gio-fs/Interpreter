@@ -94,7 +94,7 @@ static void growStack() {
     if (vm.stack.capacity <= (int)(vm.stackTop - vm.stack.values) || vm.frameArray.capacity <= vm.frameArray.count) {
         int oldStackCapacity = vm.stack.capacity;
         int oldFramesCapacity = vm.frameArray.capacity;
-        int stackSize = (int)(vm.stackTop - vm.stack.values); 
+        int stackSize = (int)(vm.stackTop - vm.stack.values);
 
         Value* oldStack = vm.stack.values;
 
@@ -103,13 +103,13 @@ static void growStack() {
         vm.stack.values = GROW_ARRAY(Value, vm.stack.values, oldStackCapacity, vm.stack.capacity);
         vm.frameArray.frames = GROW_ARRAY(CallFrame, vm.frameArray.frames, oldFramesCapacity, vm.frameArray.capacity);
 
-        vm.stackTop = vm.stack.values + stackSize;   
-        
+        vm.stackTop = vm.stack.values + stackSize;
+
         int reallocDiff = (int)(vm.stack.values - oldStack); // diff between new reallocated address and previous
         for (int i = vm.frameArray.count - 1; i >= 0; i--) {
             if (vm.frameArray.frames[i].slots != NULL) {
                 vm.frameArray.frames[i].slots += reallocDiff;
-            } 
+            }
         }
     }
 }
@@ -121,7 +121,7 @@ static bool call(ObjClosure* closure, int argc) {
     }
 
     growStack();
-    
+
     CallFrame* frame = &vm.frameArray.frames[vm.frameArray.count++];
     frame->closure= closure;
     frame->ip = closure->function->chunk.code;
@@ -155,9 +155,9 @@ static bool callValue(Value callee, int argCount) {
             default:
             // handling non callable objects
             break;
-        } 
+        }
     }
-    
+
     runtimeError("Callee must be a function or a class.");
     return false;
 }
@@ -231,7 +231,7 @@ static void defineNative(const char* name, NativeFn function) {
     push(OBJ_VAL(newNative(function)));
     tableSet(&vm.globals, AS_STRING(vm.stack.values[0]), vm.stack.values[1]);
     pop();
-    pop(); 
+    pop();
 }
 
 static ObjClass* defineBuiltinClass(const char* name) {
@@ -242,7 +242,7 @@ static ObjClass* defineBuiltinClass(const char* name) {
     pop();
     pop();
     return klass;
-} 
+}
 
 static void defineBuiltinMethod(ObjClass* klass, const char* name, NativeFn function) {
     push(OBJ_VAL(copyString(name, (int)strlen(name))));
@@ -377,7 +377,7 @@ static bool isBuiltInAndSet(Value value, ObjInstance** instance) {
         case OBJ_ARRAY:
             *instance = AS_ARRAY(value)->instance;
             return true;
-        case OBJ_DICTIONARY: 
+        case OBJ_DICTIONARY:
             *instance = AS_MAP(value)->instance;
             return true;
     }
@@ -388,7 +388,7 @@ static bool isBuiltInAndSet(Value value, ObjInstance** instance) {
 static bool isBuiltIn(Value value) {
     switch (AS_OBJ(value)->type) {
         case OBJ_ARRAY:
-        case OBJ_DICTIONARY: 
+        case OBJ_DICTIONARY:
             return true;
     }
 
@@ -399,7 +399,7 @@ static Value array_AddNative(int argCount, Value* args) {
     if (!IS_ARRAY(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    }   
+    }
     if (argCount != 2) {
         runtimeError("Array.add() expects only one argument");
         return NIL_VAL;
@@ -414,11 +414,11 @@ static Value array_SetNative(int argCount, Value* args) {
     if (!IS_ARRAY(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    } 
+    }
     if (argCount != 3) {
         runtimeError("Array.set() expects two arguments: idx, value");
         return NIL_VAL;
-    }  
+    }
 
     ObjArray* arr = AS_ARRAY(args[0]);
     arraySet(arr, AS_NUMBER(args[1]), args[2]);
@@ -429,12 +429,12 @@ static Value array_GetNative(int argCount, Value* args) {
     if (!IS_ARRAY(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    } 
+    }
     if (argCount != 2) {
         runtimeError("Array.get() expects one argument: idx");
         return NIL_VAL;
     }
-    
+
     ObjArray* arr = AS_ARRAY(args[0]);
     Value value;
     arrayGet(arr, AS_NUMBER(args[1]), &value);
@@ -445,7 +445,7 @@ static Value dict_AddNative(int argCount, Value* args) {
     if (!IS_MAP(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    }   
+    }
     if (argCount != 3) {
         runtimeError("Dict.add() expects two arguments: key, value");
         return NIL_VAL;
@@ -462,8 +462,8 @@ static Value dict_AddNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    dict->entries.entries[dict->entries.count].key = AS_STRING(args[1]);  
-    dict->entries.entries[dict->entries.count].value = args[2];    
+    Entry entry = {.key = AS_STRING(args[1]), .value = args[2]};
+    writeEntryList(&dict->entries, entry);
     return NIL_VAL;
 }
 
@@ -471,11 +471,11 @@ static Value dict_SetNative(int argCount, Value* args) {
     if (!IS_MAP(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    } 
+    }
     if (argCount != 3) {
         runtimeError("Dict.set() expects two arguments: key, value");
         return NIL_VAL;
-    }  
+    }
 
     ObjDictionary* dict = AS_MAP(args[0]);
     tableSet(&dict->map, AS_STRING(args[1]), args[2]);
@@ -486,12 +486,12 @@ static Value dict_GetNative(int argCount, Value* args) {
     if (!IS_MAP(args[0])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
-    } 
+    }
     if (argCount != 2) {
         runtimeError("Dict.get() expects one argument: key");
         return NIL_VAL;
     }
-    
+
     ObjDictionary* dict = AS_MAP(args[0]);
     Value value;
     tableGet(&dict->map, AS_STRING(args[1]), &value);
@@ -506,15 +506,15 @@ void initVM() {
     vm.openUpvalues = NULL;
     vm.objects = NULL;
     vm.bytesAllocated = 0;
-    vm.nextGC = 1024 * 1024; 
+    vm.nextGC = 1024 * 1024;
 
     vm.grayCount = 0;
     vm.grayCapacity = 0;
     vm.grayStack = NULL;
 
     vm.isCollecting = false;
-    
-    
+
+
     initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
 
@@ -535,7 +535,7 @@ void initVM() {
 }
 
 void freeVM() {
-    
+
     freeCallFrameArray(&vm.frameArray);
 
     for (int i = 0; i < vm.nestingLevel; i++) {
@@ -552,7 +552,7 @@ void freeVM() {
     freeTable(&vm.strings);
     freeTable(&vm.globals);
     freeTable(&vm.constGlobals);
-    
+
     freeObjects();
 }
 
@@ -579,7 +579,7 @@ static InterpretResult run() {
     for (;;) {
 
         #ifdef DEBUG_TRACE_EXECUTION
-            disassembleInstruction(&frame->closure->function->chunk, 
+            disassembleInstruction(&frame->closure->function->chunk,
                 (int)(frame->ip - frame->closure->function->chunk.code));
 
             printf("\n");
@@ -593,9 +593,9 @@ static InterpretResult run() {
                 printValue(*slot);
                 printf(" ] ");
             }
-            
+
             printf("\n\n");
-            
+
         #endif
 
         uint8_t instruction = READ_BYTE();
@@ -744,19 +744,18 @@ static InterpretResult run() {
                 }
                 break;
             }
-            
+
             case OP_ARRAY: {
                 int length = READ_BYTE();
                 // -1 because peek already returns last element so this way
                 // distance becomes -1 -(length - 1),  thus length elements from top
-                ValueType firstElementType = peek(length - 1).type; 
-                ObjArray* arr = newArray(firstElementType);
+                ObjArray* arr = newArray();
                 push(OBJ_VAL(arr));
 
                 for (int i = length - 1; i >= 0; i--) {
                     if (!appendArray(arr, peek(i + 1))) {
                         ObjString* errorType = valueTypeToString(peek(i).type);
-                        ObjString* arrType = valueTypeToString(firstElementType);
+                        ObjString* arrType = valueTypeToString(VAL_NUMBER);
                         runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
                         return INTERPRET_RUNTIME_ERROR;
                     }
@@ -766,21 +765,14 @@ static InterpretResult run() {
                     pop();
                 }
 
-
-                if (arr->values.count == 0) {
-                    arr->type = VAL_NIL;
-                    appendArray(arr, NIL_VAL);
-                }
-
                 push(OBJ_VAL(arr));
-
                 break;
             }
             case OP_ARRAY_LONG: {
                 int length = READ_LONG();
                 // -1 because peek already returns last element so this way
                 // distance becomes -1 -(length - 1),  thus length elements from top
-                ValueType firstElementType = peek(length - 1).type; 
+                ValueType firstElementType = peek(length - 1).type;
                 ObjArray* arr = newArray(firstElementType);
                 push(OBJ_VAL(arr));
 
@@ -796,13 +788,8 @@ static InterpretResult run() {
                 for (int i = length - 1; i >= 0; i--) {
                     pop();
                 }
-                
-                if (arr->values.count == 0) {
-                    arr->type = VAL_NIL;
-                    appendArray(arr, NIL_VAL);
-                }
 
-                
+                push(OBJ_VAL(arr));
                 break;
             }
             case OP_MAP: {
@@ -810,9 +797,9 @@ static InterpretResult run() {
                 ObjDictionary* dict = newDictionary();
 
                 for (int i = count - 1; i > 0; i -= 2) {
-                    ObjString* key = AS_STRING(peek(i));    
-                    Value elem = peek(i - 1);                       
-        
+                    ObjString* key = AS_STRING(peek(i));
+                    Value elem = peek(i - 1);
+
                     Entry curr = {.key = key, .value = elem};
                     tableSet(&dict->map, key, elem);
                     writeEntryList(&dict->entries, curr);
@@ -823,7 +810,6 @@ static InterpretResult run() {
                 }
 
                 push(OBJ_VAL(dict));
-
                 break;
             }
             case OP_MAP_LONG: {
@@ -834,7 +820,7 @@ static InterpretResult run() {
                 for (int i = count - 1; i > 0; i -= 2) {
                     Value elem = peek(i - 1);
                     ObjString* key = AS_STRING(peek(i));
-                    
+
                     Entry curr = {.key = key, .value = elem};
                     tableSet(&dict->map, key, elem);
                     writeEntryList(&dict->entries, curr);
@@ -844,6 +830,7 @@ static InterpretResult run() {
                     pop();
                 }
 
+                push(OBJ_VAL(dict));
                 break;
             }
             case OP_GET_ELEMENT: {
@@ -865,7 +852,7 @@ static InterpretResult run() {
 
                         ObjArray* arr = AS_ARRAY(frame->slots[slot]);
                         int index = AS_NUMBER(elementIndex);
-                        
+
                         if (!arrayGet(arr, index, &value)) {
                             ObjString* name = valueTypeToString(arr->type);
                             runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
@@ -894,12 +881,12 @@ static InterpretResult run() {
 
                 push(value);
                 break;
-            }   
+            }
             case OP_SET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value setVal = pop();
                 Value elementIndex = peek(0);
-                
+
                 if (!isIterable(frame->slots[slot])) {
                     runtimeError("Value must be of indexeable type");
                     return INTERPRET_RUNTIME_ERROR;
@@ -939,13 +926,13 @@ static InterpretResult run() {
 
                         break;
                     }
-                        
+
                 }
 
                 push(setVal);
                 break;
             }
-            
+
             case OP_GET_ELEMENT_GLOBAL: {
                 ObjString* name = READ_STRING();
                 Value elementIndex = pop();
@@ -978,7 +965,7 @@ static InterpretResult run() {
                     push(value);
                     break;
                 }
-                
+
                 if (!IS_ARRAY(arr)) {
                     runtimeError("Indexed variable is not an array");
                     return INTERPRET_RUNTIME_ERROR;
@@ -1045,23 +1032,23 @@ static InterpretResult run() {
                     runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
-                
+
                 break;
-                
+
             }
             case OP_FOR_EACH: {
                 int arg = READ_BYTE();
                 Value iterable = pop();
                 Value item;
                 int count = (int)AS_NUMBER(frame->slots[arg]);
-                
+
                 if (!isIterable(iterable)) {
                     runtimeError("Object is not iterable");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
                 switch (AS_OBJ(iterable)->type) {
-                    case OBJ_ARRAY: { 
+                    case OBJ_ARRAY: {
                         if (count >= AS_ARRAY(iterable)->values.count) {
                             push(NUMBER_VAL(AS_ARRAY(iterable)->values.count));
                             break;
@@ -1079,11 +1066,11 @@ static InterpretResult run() {
                             push(NUMBER_VAL(AS_MAP(iterable)->map.count));
                             break;
                         }
-                        
+
                         item = OBJ_VAL(AS_MAP(iterable)->entries.entries[count].key);
                         frame->slots[arg - 1] = item;
                         frame->slots[arg] = NUMBER_VAL(count);
-                        
+
                         push(NUMBER_VAL(AS_MAP(iterable)->map.count));
                         break;
                     }
@@ -1103,7 +1090,7 @@ static InterpretResult run() {
                 Value item;
                 int count = (int)AS_NUMBER(frame->slots[arg]);
 
-                if (!tableGet(&vm.globals, itName, &iterable) 
+                if (!tableGet(&vm.globals, itName, &iterable)
                         && !tableGet(&vm.constGlobals, itName, &iterable)) {
 
                     runtimeError("Global variable '%s' does not exist", itName->chars);
@@ -1116,7 +1103,7 @@ static InterpretResult run() {
                 }
 
                 switch (AS_OBJ(iterable)->type) {
-                    case OBJ_ARRAY: { 
+                    case OBJ_ARRAY: {
                         if (count >= AS_ARRAY(iterable)->values.count) break;
 
                         item = AS_ARRAY(iterable)->values.values[count];
@@ -1148,7 +1135,7 @@ static InterpretResult run() {
             case OP_EQUAL: {
                 Value b = pop();
                 Value a = pop();
-            
+
                 push(BOOL_VAL(valuesEqual(a, b)));
                 break;
             }
@@ -1215,7 +1202,7 @@ static InterpretResult run() {
             }
             case OP_ARRAY_CALL: {
                 int argCount = READ_BYTE();
-                
+
                 Value elementIndex = pop();
                 Value element;
 
@@ -1223,7 +1210,7 @@ static InterpretResult run() {
                     runtimeError("Array index expression must evaluate to positive integer.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-                
+
                 if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
 
                 if (!IS_ARRAY(peek(0))) {
@@ -1258,13 +1245,13 @@ static InterpretResult run() {
                 Value elementIndex = pop();
                 Value dataStruct = *frame->closure->upvalues[index]->location;
                 push(dataStruct);
-            
+
                 if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
                     runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                if (!IS_ARRAY(dataStruct) 
+                if (!IS_ARRAY(dataStruct)
                         && !IS_MAP(dataStruct)) {
                     runtimeError("Indexed element is not an array or dictionary");
                     return INTERPRET_RUNTIME_ERROR;
@@ -1295,13 +1282,13 @@ static InterpretResult run() {
                 Value elementIndex = pop();
                 Value dataStruct = *frame->closure->upvalues[index]->location;
                 push(dataStruct);
-            
+
                 if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
                     runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                if (!IS_ARRAY(dataStruct) 
+                if (!IS_ARRAY(dataStruct)
                         && !IS_MAP(dataStruct)) {
                     runtimeError("Indexed element is not an array or dictionary");
                     return INTERPRET_RUNTIME_ERROR;
@@ -1320,7 +1307,7 @@ static InterpretResult run() {
                         return INTERPRET_RUNTIME_ERROR;
                     }
                 }
-                
+
                 pop();
                 break;
             }
@@ -1357,7 +1344,7 @@ static InterpretResult run() {
                         break;
                     }
 
-        
+
                     default:
                     runtimeError("Value must be an addressable type");
                     return INTERPRET_COMPILE_ERROR;
@@ -1422,7 +1409,7 @@ static InterpretResult run() {
                 break;
             }
             case OP_QUEUE_REWIND: {
-                if (vm.firstIn[vm.nestingLevel] > 0) {  
+                if (vm.firstIn[vm.nestingLevel] > 0) {
                     vm.firstIn[vm.nestingLevel]--;
                 }
                 break;
@@ -1438,7 +1425,7 @@ static InterpretResult run() {
             case OP_QUEUE_CLEAR: {
                 vm.firstIn[vm.nestingLevel] = 0;
                 initValueArray(&vm.queue[vm.nestingLevel--]);
-                
+
                 if (vm.nestingLevel < 0) vm.nestingLevel++;
                 break;
             }
@@ -1448,7 +1435,7 @@ static InterpretResult run() {
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                vm.firstIn[++vm.nestingLevel] = 0; 
+                vm.firstIn[++vm.nestingLevel] = 0;
                 initValueArray(&vm.queue[vm.nestingLevel]);
                 break;
             }
@@ -1465,7 +1452,7 @@ static InterpretResult run() {
                 Value setVal = pop();
                 Value refObj = pop();
                 Value refIndex = pop();
-                
+
                 if (!isIterable(refObj)) {
                     runtimeError("Value must be of indexeable type");
                     return INTERPRET_RUNTIME_ERROR;
@@ -1505,7 +1492,7 @@ static InterpretResult run() {
 
                         break;
                     }
-                        
+
                 }
 
                 push(setVal);
@@ -1524,7 +1511,7 @@ static InterpretResult run() {
             case OP_ARRAY_IN_RANGE: {
                 int count = AS_NUMBER(pop());
 
-                // no need for type control since this op is emitted with 
+                // no need for type control since this op is emitted with
                 // OP_CHECK_TYPE on both 'from' and 'to' value
                 ObjArray* arr = newArray(VAL_NUMBER);
                 push(OBJ_VAL(arr));
@@ -1571,7 +1558,7 @@ static InterpretResult run() {
                 for (int i = 0; i < closure->function->upvalueCount; i++) {
                     bool isLocal = READ_BYTE();
                     int index = READ_BYTE();
-                    
+
                     if (isLocal) {
                         closure->upvalues[i] = captureUpvalue(frame->slots + index);
                     } else {
@@ -1599,7 +1586,7 @@ static InterpretResult run() {
                 push(OBJ_VAL(newClass(READ_STRING())));
                 break;
             }
-            
+
             case OP_GET_PROPERTY: {
                 ObjInstance* instance = NULL;
                 if (!IS_INSTANCE(peek(0)) && !isBuiltInAndSet(peek(0), &instance)) {
@@ -1661,7 +1648,7 @@ static InterpretResult run() {
             case OP_METHOD:
                 defineMethod(READ_STRING());
                 break;
-            case OP_DEFINE_PROPERTY: 
+            case OP_DEFINE_PROPERTY:
                 ObjString* name = READ_STRING();
                 defineProperty(name, READ_BYTE());
                 break;
@@ -1677,10 +1664,10 @@ static InterpretResult run() {
 
 
 InterpretResult interpret(const char* source) {
-    
+
     ObjFunction* function = compile(source);
     if (function == NULL) return INTERPRET_COMPILE_ERROR;
-    
+
     push(OBJ_VAL(function));
     ObjClosure* closure = newClosure(function);
     pop();

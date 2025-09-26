@@ -79,7 +79,7 @@ ParseRule rules[] = {
     [TOKEN_ERROR]               = {NULL,      NULL,       PREC_NONE},
     [TOKEN_EOF]                 = {NULL,      NULL,       PREC_NONE},
     [TOKEN_QUESTION]            = {NULL,      ternary,    PREC_TERNARY},
-    [TOKEN_LEFT_SQUARE_BRACE]   = {array,     NULL,       PREC_NONE}, 
+    [TOKEN_LEFT_SQUARE_BRACE]   = {array,     NULL,       PREC_NONE},
     [TOKEN_RIGHT_SQUARE_BRACE]  = {NULL,      NULL,       PREC_NONE},
     [TOKEN_LAMBDA]              = {lambda,    lambda,     PREC_NONE},
     [TOKEN_MINUS_EQUAL]         = {NULL,      NULL,       PREC_NONE},
@@ -255,20 +255,20 @@ static int addUpvalue(Compiler* compiler, uint8_t index, bool isLocal) {
     return compiler->function->upvalueCount++;
 }
 
-static int resolveUpvalue(Compiler* compiler, Token* name) { 
+static int resolveUpvalue(Compiler* compiler, Token* name) {
     if (compiler->enclosing == NULL) return -1;
 
-    int local = resolveLocal(compiler->enclosing, name); 
+    int local = resolveLocal(compiler->enclosing, name);
     if (local != -1) {
         compiler->enclosing->locals[local].isCaptured = true;
         return addUpvalue(compiler, (uint8_t)local, true);
     }
 
     // if upvalue isnt found in next enclosing function, recursion
-    // occurs until the upvalue is found. Each function returns its upvalue index 
+    // occurs until the upvalue is found. Each function returns its upvalue index
     // count and adds to its upvalues the index of the enclosing function. Recursion
-    // stops if resolveLocal of the enclosing function returns index != -1. If top 
-    // level is reached and resolveLocal returns -1, upvalue doesnt exist and 
+    // stops if resolveLocal of the enclosing function returns index != -1. If top
+    // level is reached and resolveLocal returns -1, upvalue doesnt exist and
     // the first calling function returns -1, leading to global/global long.
     int upvalue = resolveUpvalue(compiler->enclosing, name);
     if (upvalue != -1) {
@@ -378,12 +378,12 @@ static void beginScope() {
 
 static void endScope() {
     current->scopeDepth--;
-    while (current->localCount > 0 
+    while (current->localCount > 0
             && current->locals[current->localCount - 1].depth > current->scopeDepth) {
-        
-        current->locals[current->localCount - 1].isCaptured?  
+
+        current->locals[current->localCount - 1].isCaptured?
             emitByte(OP_CLOSE_UPVALUE) : emitByte(OP_POP);
-      
+
         current->localCount--;
     }
 
@@ -459,7 +459,7 @@ static void ternary(bool canAssign) {
 
     parsePrecedence(PREC_TERNARY);
     consume(TOKEN_COLON, "Expect ':' after the then branch");
-    
+
     int elseJump = emitJump(OP_JUMP);
     patchJump(thenJump);
     emitByte(OP_POP);
@@ -500,7 +500,7 @@ static void interp(bool canAssign) {
         emitByte(OP_ADD);
 
         if (matchCurrent(TOKEN_STRING_WITH_INTERP)) {
-            // if a string is in the middle of two interpolations, the length is just 
+            // if a string is in the middle of two interpolations, the length is just
             // the number of the actual characters in the parser
             emitConstant(OBJ_VAL(copyString(parser.previous.start, parser.previous.length)));
             emitByte(OP_ADD);
@@ -512,7 +512,7 @@ static void interp(bool canAssign) {
             break;
 
         } else {
-            // 
+            //
             break;
         }
 
@@ -542,11 +542,11 @@ static uint8_t argumentList() {
 
 static void call(bool canAssign) {
     uint8_t argCount = argumentList();
-    
+
     if (matchCurrent(TOKEN_LEFT_SQUARE_BRACE)) {
         expression();
         consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
-    
+
         emitBytes(OP_ARRAY_CALL, argCount);
     }
 
@@ -556,9 +556,9 @@ static void call(bool canAssign) {
 static void setVariable(OpCode opcodes[], int arg) {
 
     if (arg <= UINT8_MAX) {
-        emitBytes(opcodes[1], (uint8_t)arg);   
+        emitBytes(opcodes[1], (uint8_t)arg);
 
-    } else emitFourBytes(opcodes[1], (uint8_t)((arg & 0x000000ff)), 
+    } else emitFourBytes(opcodes[1], (uint8_t)((arg & 0x000000ff)),
                                          (uint8_t)((arg & 0x0000ff00) >> 8),
                                          (uint8_t)((arg & 0x00ff0000) >> 16));
 }
@@ -568,10 +568,10 @@ static void getVariable(OpCode opcodes[], int arg) {
     if (arg <= UINT8_MAX) {
         emitBytes(opcodes[0], (uint8_t)arg);
 
-    } else emitFourBytes(opcodes[0], (uint8_t)((arg & 0x000000ff)), 
+    } else emitFourBytes(opcodes[0], (uint8_t)((arg & 0x000000ff)),
                                          (uint8_t)((arg & 0x0000ff00) >> 8),
                                          (uint8_t)((arg & 0x00ff0000) >> 16));
-    
+
 }
 
 static bool namedVariable(Token name, bool canAssign) {
@@ -580,7 +580,7 @@ static bool namedVariable(Token name, bool canAssign) {
     bool compoundAssign = false;
 
     OpCode getOp, setOp, setElemOp, getElemOp;
-    
+
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
@@ -646,7 +646,7 @@ static bool namedVariable(Token name, bool canAssign) {
             }
 
             emitByte(OP_INDIRECT_STORE);
-        } 
+        }
 
         return setOp == OP_SET_GLOBAL? true : false;
     }
@@ -656,7 +656,7 @@ static bool namedVariable(Token name, bool canAssign) {
             error("Cannot assign to const variable.");
         }
 
-        expression(); 
+        expression();
         setVariable(opcodes, arg);
 
     } else if (canAssign && compoundAssign) {
@@ -706,7 +706,7 @@ static void defineVariable(uint32_t global, bool isConst) {
         return;
     }
 
-    
+
     if (global <= UINT8_MAX) {
         isConst? emitBytes(OP_DEFINE_CONST_GLOBAL, (uint8_t)global) : emitBytes(OP_DEFINE_GLOBAL, (uint8_t)global);
     } else {
@@ -715,9 +715,9 @@ static void defineVariable(uint32_t global, bool isConst) {
                                                                 (uint8_t)((global & 0x00ff0000) >> 16));
         else emitFourBytes(OP_DEFINE_GLOBAL_LONG, (uint8_t)((global & 0x000000ff)),
                                                   (uint8_t)((global & 0x0000ff00) >> 8),
-                                                  (uint8_t)((global & 0x00ff0000) >> 16));                                                    
+                                                  (uint8_t)((global & 0x00ff0000) >> 16));
     }
-    
+
 }
 
 static void variable(bool canAssign) {
@@ -726,15 +726,15 @@ static void variable(bool canAssign) {
 
 static void array(bool canAssign) {
     uint32_t elementsCount = 0;
-    if (checkType(TOKEN_RIGHT_BRACE)) {
-        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
-        return;
-    }
     do {
+        if (checkType(TOKEN_RIGHT_SQUARE_BRACE)) {
+            consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
+            break;
+        }
         expression();
         elementsCount++;
     } while (matchCurrent(TOKEN_COMMA));
- 
+
     if (matchCurrent(TOKEN_DOUBLE_DOTS)) {
         emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
         expression();
@@ -747,8 +747,6 @@ static void array(bool canAssign) {
         return;
     }
 
-    consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
-
     if (elementsCount < 256) emitBytes(OP_ARRAY, (uint8_t)elementsCount);
     else emitFourBytes(OP_ARRAY_LONG, (uint8_t)((elementsCount & 0x000000ff)),
                                       (uint8_t)((elementsCount & 0x0000ff00) >> 8),
@@ -759,6 +757,10 @@ static void dict(bool canAssign) {
     uint32_t totalCount = 0;
 
     do {
+        if (checkType(TOKEN_RIGHT_BRACE)) {
+            consume(TOKEN_RIGHT_BRACE, "Expect '}' after dictionary initialization");
+            break;
+        }
         expression();
         totalCount++;
         consume(TOKEN_COLON, "Expect ':' after key value");
@@ -766,13 +768,10 @@ static void dict(bool canAssign) {
         totalCount++;
     } while (matchCurrent(TOKEN_COMMA));
 
-    consume(TOKEN_RIGHT_BRACE, "Expect '}' after dictionary initialization");
-
     if (totalCount < 256) emitBytes(OP_MAP, (uint8_t)totalCount);
     else emitFourBytes(OP_MAP_LONG, (uint8_t)((totalCount & 0x000000ff)),
                                     (uint8_t)((totalCount & 0x0000ff00) >> 8),
                                     (uint8_t)((totalCount & 0x00ff0000) >> 16));
-
 }
 
 static void inRange(bool canAssign) {
@@ -818,10 +817,10 @@ static void or_(bool canAssign) {
 static void block();
 static void match(bool canAssign) {
     expression();
-    
+
     matchCurrent(TOKEN_RIGHT_BRACE);
-    int branchJumps[256]; 
-    int exitJumps[256]; 
+    int branchJumps[256];
+    int exitJumps[256];
     int casesCount = 0;
 
     do {
@@ -829,15 +828,15 @@ static void match(bool canAssign) {
         if (casesCount > 0) {
             patchJump(branchJumps[casesCount - 1]);
             emitByte(OP_POP);
-        } 
-        
+        }
+
         emitByte(OP_SAVE_VALUE);
         expression();
         emitByte(OP_EQUAL_AND);
         consume(TOKEN_MATCHES_TO, "Expected '=>' after match case");
         branchJumps[casesCount] = emitJump(OP_JUMP_IF_FALSE);
         emitByte(OP_POP);
-        
+
         if (matchCurrent(TOKEN_LEFT_BRACE)) {
             beginScope();
             block();
@@ -858,7 +857,7 @@ static void match(bool canAssign) {
     }
     emitThreeBytes(OP_SWAP, 0, 1);
     emitByte(OP_POP);
-    
+
     patchJump(branchJumps[casesCount - 1]);
     matchCurrent(TOKEN_RIGHT_BRACE);
 }
@@ -973,7 +972,7 @@ static void classDeclaration() {
             consume(TOKEN_VAR, "Expect 'var' after const qualifier");
             field(true);
         } else {
-            method(); 
+            method();
         }
     }
     consume(TOKEN_RIGHT_BRACE, "Expect '}' before class body");
@@ -999,9 +998,9 @@ static void function(FunctionType type) {
             bool isConst = matchCurrent(TOKEN_CONST);
             uint8_t paramConstant = parseVariable("Expect parameter name.", isConst);
             defineVariable(paramConstant, isConst);
-            
+
         } while (matchCurrent(TOKEN_COMMA));
-        
+
     }
 
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after function parameters");
@@ -1018,7 +1017,7 @@ static void function(FunctionType type) {
     for (int i = 0; i < function->upvalueCount; i++) {
         emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
         emitByte(compiler.upvalues[i].index);
-        /* 
+        /*
             printf("  upvalue %d: isLocal=%d, index=%d, name=%s\n",
             i,
             compiler.upvalues[i].isLocal,
@@ -1027,11 +1026,11 @@ static void function(FunctionType type) {
             printf("Emitting closure for %s:\n");
         */
     }
-    
+
 }
 
 static void funDeclaration() {
-    // TOKEN_CONST makes sense only for variables, so we set the flag isConst to false 
+    // TOKEN_CONST makes sense only for variables, so we set the flag isConst to false
     uint32_t global = parseVariable("Expect function name.", false);
     markInitialized();
     function(TYPE_FUNCTION);
@@ -1133,7 +1132,7 @@ static void forEachStatement(BreakEntries* breakEntries) {
 
     emitConstant(NUMBER_VAL(0));
     emitBytes(OP_SET_LOCAL, _arg);
-    
+
     advance();
     consume(TOKEN_IN, "Expect keyword 'in' after identifier.");
 
@@ -1148,14 +1147,14 @@ static void forEachStatement(BreakEntries* breakEntries) {
         emitByte(OP_INCREMENT_NESTING_LVL);
         emitByte(OP_QUEUE);
         current->nestedCount++;
-    } else { 
+    } else {
         emitByte(OP_QUEUE);
         current->nestedCount = 1;
     }
 
     int loopStart = currentChunk()->count;
     int exitJump = -1;
-   
+
     emitByte(OP_DEQUE);
     emitBytes(OP_FOR_EACH, _arg);
 
@@ -1274,7 +1273,7 @@ static void returnStatement() {
     if (current->type == TYPE_SCRIPT) {
         error("Can't return from top-level function.");
     }
-    
+
     if (matchCurrent(TOKEN_SEMICOLON)) {
         emitReturn(current->type);
     } else {
@@ -1388,7 +1387,7 @@ static void loopDeclaration(int loopStart, BreakEntries* breakEntries) {
     if (matchCurrent(TOKEN_CLASS)) {
         classDeclaration();
     } else if (matchCurrent(TOKEN_FN)) {
-        funDeclaration();  
+        funDeclaration();
     } else if (matchCurrent(TOKEN_CONST)) {
         consume(TOKEN_VAR, "Expect variable after const.");
         varDeclaration(true);
