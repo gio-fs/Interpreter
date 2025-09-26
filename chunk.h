@@ -44,8 +44,6 @@ typedef enum {
     OP_SET_ELEMENT,
     OP_GET_MAP,
     OP_SET_MAP,
-    OP_CALL_LAMBDA,
-    OP_RET_FROM_LAMBDA,
     OP_GET_ELEMENT_GLOBAL,
     OP_SET_ELEMENT_GLOBAL,
     OP_GET_MAP_GLOBAL,
@@ -56,7 +54,7 @@ typedef enum {
     OP_SET_MAP_GLOBAL_LONG,
     OP_FOR_EACH,
     OP_FOR_EACH_GLOBAL,
-    OP_SAVE_INDEX,
+    OP_SAVE_VALUE,
     OP_REVERSE_N,
     OP_QUEUE,
     OP_DEQUE,
@@ -67,7 +65,11 @@ typedef enum {
     OP_DECREMENT_NESTING_LVL,
     OP_CHECK_TYPE,
     OP_INDIRECT_STORE,
+    OP_PUSH_FROM,
+    OP_ITER_IN_RANGE,
+    OP_ARRAY_IN_RANGE,
     OP_EQUAL,
+    OP_EQUAL_AND,
     OP_GREATER,
     OP_LESS,
     OP_ADD,
@@ -78,6 +80,11 @@ typedef enum {
     OP_NEGATE,
     OP_PRINT,
     OP_RETURN,
+    OP_CLASS,
+    OP_DEFINE_PROPERTY,
+    OP_GET_PROPERTY,
+    OP_SET_PROPERTY,
+    OP_METHOD
 } OpCode;
 
 

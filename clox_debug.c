@@ -117,10 +117,6 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return byteInstruction("OP_MAP", chunk, offset);
         case OP_MAP_LONG:
             return constantLongInstruction("OP_MAP_LONG", chunk, offset);
-        case OP_CALL_LAMBDA:
-            return byteInstruction("OP_CALL_LAMBDA", chunk, offset);   
-        case OP_RET_FROM_LAMBDA:
-            return simpleInstruction("OP_RET_FROM_LAMBDA", offset);
         case OP_GET_ELEMENT:
             return byteInstruction("OP_GET_ELEMENT", chunk, offset);
         case OP_SET_ELEMENT:
@@ -167,6 +163,12 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             printf("%-16s %4d, %4d\n", "OP_FOR_EACH_GLOBAL", slot, slot2);
             return offset + 3;
         }
+        case OP_SWAP: {
+            uint8_t slot1 = chunk->code[offset + 1];
+            uint8_t slot2 = chunk->code[offset + 2];
+            printf("%-16s %4d, %4d\n", "OP_SWAP", slot1, slot2);
+            return offset + 3;
+        }
         case OP_ARRAY_CALL:
             return simpleInstruction("OP_ARRAY_CALL", offset);
         case OP_CALL:
@@ -209,10 +211,34 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return simpleInstruction("OP_GET_ELEMENT_FROM_TOP", offset);
         case OP_QUEUE_CLEAR:
             return simpleInstruction("OP_QUEUE_CLEAR", offset);
+        case OP_QUEUE_REWIND:
+            return simpleInstruction("OP_QUEUE_REWIND", offset);
+        case OP_INDIRECT_STORE:
+            return simpleInstruction("OP_INDIRECT_STORE", offset);
+        case OP_SAVE_VALUE:
+            return simpleInstruction("OP_SAVE_VALUE", offset);
         case OP_REVERSE_N:
             return byteInstruction("OP_REVERSE_N", chunk, offset);
+        case OP_PUSH_FROM:
+            return byteInstruction("OP_PUSH_FROM", chunk, offset);
+        case OP_CHECK_TYPE:
+            return byteInstruction("OP_CHECK_TYPE", chunk, offset);
+        case OP_ARRAY_IN_RANGE:
+            return simpleInstruction("OP_ARRAY_IN_RANGE", offset);
+        case OP_ITER_IN_RANGE:
+            return byteInstruction("OP_ITER_IN_RANGE", chunk, offset);
         case OP_DEQUE:
             return simpleInstruction("OP_DEQUE", offset);
+        case OP_METHOD:
+            return constantInstruction("OP_METHOD", chunk, offset);
+        case OP_CLASS:
+            return constantInstruction("OP_CLASS", chunk, offset);
+        case OP_GET_PROPERTY:
+            return constantInstruction("OP_GET_PROPERTY", chunk, offset);
+        case OP_SET_PROPERTY:
+            return constantInstruction("OP_SET_PROPERTY", chunk, offset);
+        case OP_DEFINE_PROPERTY: 
+            return simpleInstruction("OP_DEFINE_PROPERTY", offset);
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;

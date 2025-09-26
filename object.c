@@ -28,7 +28,6 @@ ObjFunction* newFunction() {
 
     function->arity = 0;
     function->upvalueCount = 0;
-    function->isLambda = false;
     function->name = NULL;
     initChunk(&function->chunk);
     return function;
@@ -41,6 +40,10 @@ ObjArray* newArray(ValueType type) {
     arr->values.values = NULL;
     arr->values.count = 0;
     arr->values.capacity = 0;
+
+    Value arrClass;
+    tableGet(&vm.globals, copyString("__Array__", 9), &arrClass);
+    arr->instance = newInstance(AS_CLASS(arrClass));
     return arr;
 }
 
@@ -107,8 +110,34 @@ ObjDictionary* newDictionary() {
     ObjDictionary* dict = ALLOCATE_OBJ(ObjDictionary, OBJ_DICTIONARY);
     initTable(&dict->map);
     initEntryList(&dict->entries);
-
+    Value dictClass;
+    tableGet(&vm.globals, copyString("__Dict__", 8), &dictClass);
+    dict->instance = newInstance(AS_CLASS(dictClass));
     return dict;
+}
+
+ObjClass* newClass(ObjString* name) {
+    ObjClass* cclass = ALLOCATE_OBJ(ObjClass, OBJ_CLASS);
+    cclass->name = name;
+    initTable(&cclass->methods);
+    initTable(&cclass->fields);
+    return cclass;
+}
+
+ObjInstance* newInstance(ObjClass* klass) {
+    ObjInstance* instance = ALLOCATE_OBJ(ObjInstance, OBJ_INSTANCE);
+    instance->klass = klass;
+    initTable(&instance->fields);
+    tableAddAll(&klass->fields, &instance->fields);
+    tableAddAll(&klass->methods, &instance->fields);
+    return instance;
+}
+
+ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method) {
+    ObjBoundMethod* bound = ALLOCATE_OBJ(ObjBoundMethod, OBJ_BOUND_METHOD);
+    bound->receiver = receiver;
+    bound->method = method;
+    return bound;
 }
 
 //FNV-1a non-criptographic hash algorithm
@@ -216,6 +245,18 @@ void printObject(Value value) {
         // #endif
 
         break;
+        }
+        case OBJ_CLASS: {
+            printf("class %s", AS_CLASS(value)->name->chars);
+            break;
+        }
+        case OBJ_INSTANCE: {
+            printf("%s instance", AS_INSTANCE(value)->klass->name->chars);
+            break;
+        }
+        case OBJ_BOUND_METHOD: {
+            printFunction(AS_BOUND_METHOD(value)->method->function);
+            break;
         }
 
              

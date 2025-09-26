@@ -47,8 +47,10 @@ typedef struct {
 typedef enum {
     TYPE_FUNCTION,
     TYPE_SCRIPT,
-    TYPE_LAMBDA
+    TYPE_LAMBDA,
+    TYPE_METHOD
 } FunctionType;
+
 typedef struct Compiler {
     // linked list to keep track of the compiler struct of each function
     struct Compiler* enclosing;

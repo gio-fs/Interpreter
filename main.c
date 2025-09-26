@@ -15,7 +15,10 @@ static void repl() {
             break;
         }
 
-        interpret(line);
+        if (interpret(line) != INTERPRET_OK) {
+            freeVM();
+            initVM();
+        }
     }
 }
 

@@ -108,9 +108,25 @@ void freeObject(Obj* obj) {
 
         case OBJ_DICTIONARY: {
             ObjDictionary* dict = (ObjDictionary*)obj;
-            freeTable(&dict->map); // deve solo liberare, no alloc
+            freeTable(&dict->map); 
             reallocate(dict->entries.entries, sizeof(Entry) * dict->entries.capacity, 0);
             reallocate(dict, sizeof(ObjDictionary), 0);
+            break;
+        }
+        case OBJ_CLASS: {
+            ObjClass* klass = (ObjClass*)obj;
+            freeTable(&klass->methods);
+            FREE(ObjClass, obj);
+            break;
+        }
+        case OBJ_INSTANCE: {
+            ObjInstance* instance = (ObjInstance*)obj;
+            freeTable(&instance->fields);
+            FREE(ObjInstance, obj);
+            break;
+        }
+        case OBJ_BOUND_METHOD: {
+            FREE(ObjBoundMethod, obj);
             break;
         }
     }
@@ -165,6 +181,7 @@ static const char* typeName(ObjType type) {
         case OBJ_CLOSURE:    return "closure";
         case OBJ_UPVALUE:    return "upvalue";
         case OBJ_DICTIONARY: return "dictionary";
+        case OBJ_CLASS:      return "class";
         default:             return "unknown";
     }
 }
@@ -210,19 +227,41 @@ static void blackenObject(Obj* obj) {
             fprintf(stderr, "  -> mark dictionary map\n");
 #endif
             markTable(&dict->map);
-            freeEntryList(&dict->entries);
+            for (int i = 0; i < dict->entries.count; i++) {
+                markObj((Obj*)dict->entries.entries[i].key);
+                markValue(dict->entries.entries[i].value);
+            }
             break;
         }
         case OBJ_ARRAY: {
+            ObjArray* arr = (ObjArray*)obj;
 #ifdef DEBUG_LOG_GC
             fprintf(stderr, "  -> mark array values (%d)\n", ((ObjArray*)obj)->values.count);
 #endif
-            markArray(&((ObjArray*)obj)->values);
+            markArray(&arr->values);
+            break;
+        }
+        case OBJ_CLASS: {
+            ObjClass* klass = (ObjClass*)obj;
+            markObj((Obj*)klass->name);
+            markTable(&klass->methods);
+            break; 
+        }
+        case OBJ_INSTANCE: {
+            ObjInstance* instance = (ObjInstance*)obj;
+            markObj((Obj*)instance->klass);
+            markTable(&instance->fields);
+            break;
+        }
+        case OBJ_BOUND_METHOD: {
+            ObjBoundMethod* bound = (ObjBoundMethod*)obj;
+            markValue(bound->receiver);
+            markObj((Obj*)bound->method);
             break;
         }
         case OBJ_NATIVE:
         case OBJ_STRING:
-            // Nessun riferimento da marcare
+            
             break;
     }
 }

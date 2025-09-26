@@ -20,7 +20,7 @@ VM vm;
 #include <time.h>
 #include <stdint.h>
 
-double highres_time(void) {
+double highres_time() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
@@ -89,13 +89,6 @@ static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
 }
 
-static void defineNative(const char* name, NativeFn function) {
-    push(OBJ_VAL(copyString(name, (int)strlen(name))));
-    push(OBJ_VAL(newNative(function)));
-    tableSet(&vm.globals, AS_STRING(vm.stack.values[0]), vm.stack.values[1]);
-    pop();
-    pop(); 
-}
 
 static void growStack() {
     if (vm.stack.capacity <= (int)(vm.stackTop - vm.stack.values) || vm.frameArray.capacity <= vm.frameArray.count) {
@@ -150,6 +143,15 @@ static bool callValue(Value callee, int argCount) {
                 push(result);
                 return true;
             }
+            case OBJ_CLASS: {
+                ObjClass* klass = AS_CLASS(callee);
+                vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
+                return true;
+            }
+            case OBJ_BOUND_METHOD: {
+                ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
+                return call(bound->method, argCount);
+            }
             default:
             // handling non callable objects
             break;
@@ -203,8 +205,65 @@ ObjUpvalue* captureUpvalue(Value* local) {
     }
 
     // this way we have an ordered linked list of value slots
-    
     return created;
+}
+
+static void defineMethod(ObjString* name) {
+    // printValue(OBJ_VAL(name));
+    // printf("\n");
+    Value method = peek(0);
+    ObjClass* klass = AS_CLASS(peek(1));
+    tableSet(&klass->methods, name, method);
+    pop();
+}
+
+static void defineProperty(ObjString* name, bool isConst) {
+    // printValue(OBJ_VAL(name));
+    // printf("\n");
+    // printf("Const: %d\n", isConst);
+    ObjClass* klass = AS_CLASS(peek(0));
+    isConst? tableSet(&klass->fields, name, NUMBER_VAL(-1))
+                : tableSet(&klass->fields, name, NIL_VAL);
+}
+
+static void defineNative(const char* name, NativeFn function) {
+    push(OBJ_VAL(copyString(name, (int)strlen(name))));
+    push(OBJ_VAL(newNative(function)));
+    tableSet(&vm.globals, AS_STRING(vm.stack.values[0]), vm.stack.values[1]);
+    pop();
+    pop(); 
+}
+
+static ObjClass* defineBuiltinClass(const char* name) {
+    push(OBJ_VAL(copyString(name, (int)strlen(name))));
+    push(OBJ_VAL(newClass(AS_STRING(peek(0)))));
+    ObjClass* klass = AS_CLASS(peek(0));
+    tableSet(&vm.globals, AS_STRING(peek(1)), peek(0));
+    pop();
+    pop();
+    return klass;
+} 
+
+static void defineBuiltinMethod(ObjClass* klass, const char* name, NativeFn function) {
+    push(OBJ_VAL(copyString(name, (int)strlen(name))));
+    push(OBJ_VAL(newNative(function)));
+    tableSet(&klass->methods, AS_STRING(peek(1)), peek(0));
+    pop();
+    pop();
+}
+
+
+static bool bindMethod(ObjClass* klass, ObjString* name) {
+    Value method;
+    if (!tableGet(&klass->methods, name, &method)) {
+        runtimeError("Undefined property");
+        return false;
+    }
+
+    ObjBoundMethod* bound = newBoundMethod(peek(0), AS_CLOSURE(method));
+    pop();
+    push(OBJ_VAL(bound));
+    return true;
 }
 
 ObjString* valueTypeToString(ValueType type) {
@@ -235,7 +294,7 @@ static ObjString* valueToString(Value value) {
         double num = AS_NUMBER(value);
         char buffer[40];
 
-        // snprintf copies char to buffer with a specific format
+        // snprintf copies a value (num in this case) as a string literal to buffer with a specific format
         if (num == (int)num) {
             snprintf(buffer, sizeof(buffer), "%.0f", num);
         } else {
@@ -313,6 +372,131 @@ static bool isIterable(Value value) {
     else return false;
 }
 
+static bool isBuiltInAndSet(Value value, ObjInstance** instance) {
+    switch (AS_OBJ(value)->type) {
+        case OBJ_ARRAY:
+            *instance = AS_ARRAY(value)->instance;
+            return true;
+        case OBJ_DICTIONARY: 
+            *instance = AS_MAP(value)->instance;
+            return true;
+    }
+    return false;
+}
+
+
+static bool isBuiltIn(Value value) {
+    switch (AS_OBJ(value)->type) {
+        case OBJ_ARRAY:
+        case OBJ_DICTIONARY: 
+            return true;
+    }
+
+    return false;
+}
+
+static Value array_AddNative(int argCount, Value* args) {
+    if (!IS_ARRAY(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    }   
+    if (argCount != 2) {
+        runtimeError("Array.add() expects only one argument");
+        return NIL_VAL;
+    }
+
+    ObjArray* arr = AS_ARRAY(args[0]);
+    appendArray(arr, args[1]);
+    return NIL_VAL;
+}
+
+static Value array_SetNative(int argCount, Value* args) {
+    if (!IS_ARRAY(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    } 
+    if (argCount != 3) {
+        runtimeError("Array.set() expects two arguments: idx, value");
+        return NIL_VAL;
+    }  
+
+    ObjArray* arr = AS_ARRAY(args[0]);
+    arraySet(arr, AS_NUMBER(args[1]), args[2]);
+    return args[2];
+}
+
+static Value array_GetNative(int argCount, Value* args) {
+    if (!IS_ARRAY(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    } 
+    if (argCount != 2) {
+        runtimeError("Array.get() expects one argument: idx");
+        return NIL_VAL;
+    }
+    
+    ObjArray* arr = AS_ARRAY(args[0]);
+    Value value;
+    arrayGet(arr, AS_NUMBER(args[1]), &value);
+    return value;
+}
+
+static Value dict_AddNative(int argCount, Value* args) {
+    if (!IS_MAP(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    }   
+    if (argCount != 3) {
+        runtimeError("Dict.add() expects two arguments: key, value");
+        return NIL_VAL;
+    }
+
+    ObjDictionary* dict = AS_MAP(args[0]);
+    Value value;
+    tableGet(&dict->map, AS_STRING(args[1]), &value);
+
+    if (!tableSet(&dict->map, AS_STRING(args[1]), args[2])) {
+        runtimeError("Entry already exists in dictionary");
+        tableDelete(&dict->map, AS_STRING(args[1]));
+        tableSet(&dict->map, AS_STRING(args[1]), value);
+        return NIL_VAL;
+    }
+
+    dict->entries.entries[dict->entries.count].key = AS_STRING(args[1]);  
+    dict->entries.entries[dict->entries.count].value = args[2];    
+    return NIL_VAL;
+}
+
+static Value dict_SetNative(int argCount, Value* args) {
+    if (!IS_MAP(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    } 
+    if (argCount != 3) {
+        runtimeError("Dict.set() expects two arguments: key, value");
+        return NIL_VAL;
+    }  
+
+    ObjDictionary* dict = AS_MAP(args[0]);
+    tableSet(&dict->map, AS_STRING(args[1]), args[2]);
+    return args[2];
+}
+
+static Value dict_GetNative(int argCount, Value* args) {
+    if (!IS_MAP(args[0])) {
+        runtimeError("Value is not an array");
+        return NIL_VAL;
+    } 
+    if (argCount != 2) {
+        runtimeError("Dict.get() expects one argument: key");
+        return NIL_VAL;
+    }
+    
+    ObjDictionary* dict = AS_MAP(args[0]);
+    Value value;
+    tableGet(&dict->map, AS_STRING(args[1]), &value);
+    return value;
+}
 
 void initVM() {
     vm.stack.count = 0;
@@ -334,25 +518,32 @@ void initVM() {
     initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
 
-    
-    
-
     initTable(&vm.strings);
     initTable(&vm.globals);
     initTable(&vm.constGlobals);
 
 
     defineNative("clock", clockNative);
+    ObjClass* array = defineBuiltinClass("__Array__");
+    defineBuiltinMethod(array, "add", array_AddNative);
+    defineBuiltinMethod(array, "set", array_SetNative);
+    defineBuiltinMethod(array, "get", array_GetNative);
+    ObjClass* dict = defineBuiltinClass("__Dict__");
+    defineBuiltinMethod(dict, "add", dict_AddNative);
+    defineBuiltinMethod(dict, "set", dict_SetNative);
+    defineBuiltinMethod(dict, "get", dict_GetNative);
 }
 
 void freeVM() {
     
     freeCallFrameArray(&vm.frameArray);
-    freeValueArray(&vm.queue[0]);
 
-    for (int i = 0; i < MAX_NESTING_LVL; i++) {
+    for (int i = 0; i < vm.nestingLevel; i++) {
         vm.firstIn[i] = 0;
+        freeValueArray(&vm.queue[i]);
     }
+
+    vm.nestingLevel = 0;
 
     FREE_ARRAY(Value, vm.stack.values, vm.stack.capacity);
     vm.stack.capacity = 0;
@@ -655,77 +846,15 @@ static InterpretResult run() {
 
                 break;
             }
-            case OP_CALL_LAMBDA: {
-                int argCount = READ_BYTE();
-                printf("argc: %d\n", argCount);
-                if (!call(AS_CLOSURE(peek(0)), argCount)) {
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                break;
-            }
-            case OP_RET_FROM_LAMBDA: {
-                Value rv = pop();
-
-                vm.frameArray.count--;
-                if (vm.frameArray.count == 0 ) {
-                    runtimeError("Lambda shouldn't return from top level");
-                    return INTERPRET_OK;
-                }
-
-                vm.stackTop = frame->slots;
-                push(rv);
-
-                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                break;
-            }
-            /*case OP_GET_ELEMENT: {
-                int slot = READ_BYTE();
-                Value elementIndex = pop();
-
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Index must evaluate to positive integer for an array or to a string for dictionaries.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                if (IS_STRING(elementIndex)) {
-                    if (!IS_MAP(frame->slots[slot])) {
-                        runtimeError("Element must be a dictionary");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                    ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                    ObjString* key = AS_STRING(elementIndex);
-                    Value value;
-
-                    if (!tableGet(&dict->map, key, &value)) {
-                        runtimeError("Key not found");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                    push(value);
-                    break;
-                }
-
-                if (!IS_ARRAY(frame->slots[slot])) {
-                    runtimeError("Indexed element is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjArray* cachedArr = AS_ARRAY(frame->slots[slot]);
-                Value element;
-                if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
-                    runtimeError("Index out of bounds.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                
-                push(element);
-                break;
-            }*/
-           case OP_GET_ELEMENT: {
+            case OP_GET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value elementIndex = pop();
                 Value value;
+
+                if (!isIterable(frame->slots[slot])) {
+                    runtimeError("Value must be of indexeable type");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
 
                 switch (AS_OBJ(frame->slots[slot])->type) {
                     case OBJ_ARRAY: {
@@ -736,7 +865,7 @@ static InterpretResult run() {
 
                         ObjArray* arr = AS_ARRAY(frame->slots[slot]);
                         int index = AS_NUMBER(elementIndex);
-
+                        
                         if (!arrayGet(arr, index, &value)) {
                             ObjString* name = valueTypeToString(arr->type);
                             runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
@@ -754,7 +883,7 @@ static InterpretResult run() {
                         ObjDictionary* dict = AS_MAP(frame->slots[slot]);
                         ObjString* key = AS_STRING(elementIndex);
 
-                        if (tableGet(&dict->map, key, &value)) {
+                        if (!tableGet(&dict->map, key, &value)) {
                             runtimeError("Key '%s' not found in dictionary\n", key->chars);
                             return INTERPRET_RUNTIME_ERROR;
                         }
@@ -1019,6 +1148,20 @@ static InterpretResult run() {
             case OP_EQUAL: {
                 Value b = pop();
                 Value a = pop();
+            
+                push(BOOL_VAL(valuesEqual(a, b)));
+                break;
+            }
+            case OP_EQUAL_AND: {
+                Value b = pop();
+                Value a = pop();
+                if (IS_BOOL(a) && IS_BOOL(b)) {
+                    bool first = AS_BOOL(b);
+                    bool second = AS_BOOL(a);
+                    push(BOOL_VAL(first & second));
+                    break;
+                }
+
                 push(BOOL_VAL(valuesEqual(a, b)));
                 break;
             }
@@ -1063,6 +1206,7 @@ static InterpretResult run() {
                 break;
             case OP_CALL: {
                 int argCount = READ_BYTE();
+                if (isBuiltIn(peek(argCount))) argCount++;
                 printf("argc: %d\n", argCount);
                 if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
 
@@ -1236,7 +1380,7 @@ static InterpretResult run() {
                 *second = temp;
                 break;
             }
-            case OP_SAVE_INDEX: {
+            case OP_SAVE_VALUE: {
                 push(peek(0));
                 break;
             }
@@ -1299,13 +1443,13 @@ static InterpretResult run() {
                 break;
             }
             case OP_INCREMENT_NESTING_LVL: {
-                if (vm.nestingLevel == 64) {
+                if (vm.nestingLevel == MAX_NESTING_LVL) {
                     runtimeError("Max nesting level is 64");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                vm.firstIn[vm.nestingLevel] = 0; 
-                initValueArray(&vm.queue[++vm.nestingLevel]);
+                vm.firstIn[++vm.nestingLevel] = 0; 
+                initValueArray(&vm.queue[vm.nestingLevel]);
                 break;
             }
             case OP_DECREMENT_NESTING_LVL: {
@@ -1359,8 +1503,6 @@ static InterpretResult run() {
                             return INTERPRET_RUNTIME_ERROR;
                         }
 
-                        
-
                         break;
                     }
                         
@@ -1370,8 +1512,50 @@ static InterpretResult run() {
                 break;
             }
             case OP_CHECK_TYPE: {
-                if (!isIterable(peek(0))) push(BOOL_VAL(0));
-                else push(BOOL_VAL(1));
+                ValueType type = READ_BYTE();
+                if (peek(0).type != type) {
+                    ObjString* valueType = valueTypeToString(type);
+                    runtimeError("Expected value of type '%s'", valueType->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                break;
+            }
+            case OP_ARRAY_IN_RANGE: {
+                int count = AS_NUMBER(pop());
+
+                // no need for type control since this op is emitted with 
+                // OP_CHECK_TYPE on both 'from' and 'to' value
+                ObjArray* arr = newArray(VAL_NUMBER);
+                push(OBJ_VAL(arr));
+
+                for (int i = count - 1; i >= 0; i--) {
+                    appendArray(arr, peek(i + 1));
+                }
+
+                for (int i = count; i >= 0; i--) {
+                    pop();
+                }
+
+                push(OBJ_VAL(arr));
+                break;
+            }
+            case OP_PUSH_FROM: {
+                int slot = READ_BYTE();
+                push(peek(slot));
+                break;
+            }
+            case OP_ITER_IN_RANGE: {
+                double to = AS_NUMBER(pop());
+                double from = AS_NUMBER(peek(0));
+                int args = 1;
+
+                for (++from; from <= to; from++) {
+                    push(NUMBER_VAL(from));
+                    args++;
+                }
+
+                push(NUMBER_VAL(args));
                 break;
             }
             case OP_CLOSE_UPVALUE: {
@@ -1410,6 +1594,76 @@ static InterpretResult run() {
                 push(rv);
 
                 frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+                break;
+            case OP_CLASS: {
+                push(OBJ_VAL(newClass(READ_STRING())));
+                break;
+            }
+            
+            case OP_GET_PROPERTY: {
+                ObjInstance* instance = NULL;
+                if (!IS_INSTANCE(peek(0)) && !isBuiltInAndSet(peek(0), &instance)) {
+                    runtimeError("Only instances can have properties");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                if (!isBuiltIn(peek(0))) instance = AS_INSTANCE(peek(0));
+                ObjString* name = READ_STRING();
+                printf("Chars: %s\n", name->chars);
+
+                Value value;
+                if (tableGet(&instance->fields, name, &value)) {
+                    printf("entered tableGet of GET_PROPERTY\n");
+                    if (isBuiltIn(peek(0))) {
+                        Value builtin = pop();
+                        push(value);
+                        push(builtin);
+                    } else {
+                        pop();
+                        push(value);
+                    }
+                    break;
+                }
+
+                if (!bindMethod(instance->klass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                runtimeError("Undefined property '%s'");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            case OP_SET_PROPERTY: {
+                ObjInstance* instance = NULL;
+                if (!IS_INSTANCE(peek(1)) && !isBuiltInAndSet(peek(1), &instance)) {
+                    runtimeError("Only instances can have properties");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                if (!isBuiltIn(peek(1))) instance = AS_INSTANCE(peek(1));
+                ObjString* fieldName = READ_STRING();
+                Value constValue;
+
+                if (tableGet(&instance->fields, fieldName, &constValue)) {
+                    if (valuesEqual(constValue, NUMBER_VAL(-1))) {
+                        runtimeError("Cannot modify const field");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                }
+
+                tableSet(&instance->fields, fieldName, peek(0));
+
+                // we remove the instance from the stack
+                // and leave only the property set value
+                Value value = pop();
+                pop();
+                push(value);
+                break;
+            }
+            case OP_METHOD:
+                defineMethod(READ_STRING());
+                break;
+            case OP_DEFINE_PROPERTY: 
+                ObjString* name = READ_STRING();
+                defineProperty(name, READ_BYTE());
                 break;
         }
     }
