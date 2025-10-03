@@ -122,8 +122,13 @@ static void initCompiler(Compiler* compiler, FunctionType type) {
         local->name.length = 0;
     }
 
-    compiler->nestedCount = 0;
-    current->nestedLevel = 0;
+    if (type != TYPE_SCRIPT) {
+        compiler->nestedCount = 1;
+        current->nestedLevel = 1;
+    } else {
+        compiler->nestedCount = 0;
+        current->nestedLevel = 0;
+    }
 }
 
 static void errorAt(Token* token, const char* message) {
@@ -343,6 +348,7 @@ static void patchJump(int offset) {
     currentChunk()->code[offset] = (jump >> 8) & 0xff;
     currentChunk()->code[offset + 1] = jump & 0xff;
 }
+
 static void emitLoop(int loopStart) {
     emitByte(OP_LOOP);
 
@@ -386,8 +392,6 @@ static void endScope() {
 
         current->localCount--;
     }
-
-
 }
 
 static void popLocalsAbove(int depth) {
@@ -433,7 +437,6 @@ static void binary(bool canAssign) {
  // compile the right op
     ParseRule* rule = getRule(operatorType);
     parsePrecedence((Precedence)(rule->precedence + 1));
-
 
  // emit the op instruction
     switch (operatorType) {
@@ -727,22 +730,25 @@ static void variable(bool canAssign) {
 static void array(bool canAssign) {
     uint32_t elementsCount = 0;
 
-    while (!checkType(TOKEN_RIGHT_SQUARE_BRACE) ) {
+    if (!checkType(TOKEN_RIGHT_SQUARE_BRACE)) {
         expression();
         elementsCount++;
-        matchCurrent(TOKEN_COMMA);
+
+        if (matchCurrent(TOKEN_DOUBLE_DOTS)) {
+            emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
+            expression();
+            emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
+
+            consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after range");
+            emitByte(OP_RANGE);
+            return;
+        }
     }
 
-    if (matchCurrent(TOKEN_DOUBLE_DOTS)) {
-        emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
+    while (!checkType(TOKEN_RIGHT_SQUARE_BRACE)
+                && matchCurrent(TOKEN_COMMA)) {
         expression();
-        emitBytes(OP_CHECK_TYPE, VAL_NUMBER);
-        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
-
-        emitByte(OP_ITER_IN_RANGE);
-        emitByte(OP_ARRAY_IN_RANGE);
-
-        return;
+        elementsCount++;
     }
 
     consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after array initialization");
@@ -1135,10 +1141,6 @@ static void forEachStatement(BreakEntries* breakEntries) {
     advance();
     consume(TOKEN_IN, "Expect keyword 'in' after identifier.");
 
-    // Parse the iterable
-    // Token itName = parser.current;
-    // advance();
-    // bool isGlobal = namedVariable(itName, false);
     expression();
     bool isNested = current->nestedCount > 0;
 

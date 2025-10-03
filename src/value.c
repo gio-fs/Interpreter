@@ -4,6 +4,7 @@
 #include "value.h"
 #include "memory.h"
 #include "object.h"
+#include "vm.h"
 
 void initValueArray(ValueArray* arr) {
 
@@ -16,7 +17,10 @@ void writeValueArray(ValueArray* arr,  Value value) {
     if (arr->capacity < arr->count + 1) {
         int oldCapacity = arr->capacity;
         arr->capacity = GROW_CAPACITY(oldCapacity);
+        bool wasCollecting = vm.isCollecting;
+        vm.isCollecting = true;
         arr->values = GROW_ARRAY(Value, arr->values, oldCapacity, arr->capacity);
+        vm.isCollecting = wasCollecting;
     }
 
     arr->values[arr->count++] = value;

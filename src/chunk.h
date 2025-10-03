@@ -2,7 +2,7 @@
 #define clox_chunk_h
 #include "common.h"
 #include "value.h"
-
+#include "table.h"
 
 typedef enum {
     OP_CONSTANT,
@@ -66,8 +66,7 @@ typedef enum {
     OP_CHECK_TYPE,
     OP_INDIRECT_STORE,
     OP_PUSH_FROM,
-    OP_ITER_IN_RANGE,
-    OP_ARRAY_IN_RANGE,
+    OP_RANGE,
     OP_EQUAL,
     OP_EQUAL_AND,
     OP_GREATER,
@@ -104,6 +103,7 @@ typedef struct {
     uint8_t* code;
     LineArray lineArray;
     ValueArray constants;
+    Table saved;
 } Chunk;
 
 

@@ -42,8 +42,11 @@ ObjArray* newArray() {
     arr->values.capacity = 0;
 
     Value arrClass;
-    tableGet(&vm.globals, copyString("__Array__", 9), &arrClass);
-    arr->instance = newInstance(AS_CLASS(arrClass));
+    if (!tableGet(&vm.globals, vm.array_NativeString, &arrClass)) {
+        runtimeError("Native class '%s' not found", vm.array_NativeString->chars);
+    }
+    arr->klass = AS_CLASS(arrClass);
+
     return arr;
 }
 
@@ -61,6 +64,10 @@ bool appendArray(ObjArray* arr, Value value) {
     pop();
 
     return true;
+}
+
+Value arrayPop(ObjArray* arr) {
+    return arr->values.values[arr->values.count--];
 }
 
 bool arraySet(ObjArray* arr, int index, Value value) {
@@ -95,9 +102,10 @@ ObjClosure* newClosure(ObjFunction* function) {
     return closure;
 }
 
-ObjNative* newNative(NativeFn function) {
+ObjNative* newNative(NativeFn function, bool isBuiltIn) {
     ObjNative* native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
     native->function = function;
+    native->isBuiltIn = isBuiltIn;
     return native;
 }
 
@@ -114,9 +122,20 @@ ObjDictionary* newDictionary() {
     initTable(&dict->map);
     initEntryList(&dict->entries);
     Value dictClass;
-    tableGet(&vm.globals, copyString("__Dict__", 8), &dictClass);
-    dict->instance = newInstance(AS_CLASS(dictClass));
+    if (!tableGet(&vm.globals, vm.dict_NativeString, &dictClass)) {
+        runtimeError("Native class '%s' not found", vm.dict_NativeString->chars);
+    }
+    dict->klass = AS_CLASS(dictClass);
+    // printf("Created an instance of %s\n")
     return dict;
+}
+
+ObjRange* newRange(double start, double end) {
+    ObjRange* range = ALLOCATE_OBJ(ObjRange, OBJ_RANGE);
+    range->start = start;
+    range->end = end;
+    range->current = start;
+    return range;
 }
 
 ObjClass* newClass(ObjString* name) {
@@ -130,9 +149,11 @@ ObjClass* newClass(ObjString* name) {
 ObjInstance* newInstance(ObjClass* klass) {
     ObjInstance* instance = ALLOCATE_OBJ(ObjInstance, OBJ_INSTANCE);
     instance->klass = klass;
-    initTable(&instance->fields);
-    tableAddAll(&klass->fields, &instance->fields);
-    tableAddAll(&klass->methods, &instance->fields);
+    // vm.isCollecting = true;
+    // initTable(&instance->fields);
+    // tableAddAll(&klass->fields, &instance->fields);
+    // tableAddAll(&klass->methods, &instance->fields);
+    // vm.isCollecting = false;
     return instance;
 }
 
@@ -157,15 +178,15 @@ uint32_t hashString(const char* chars, int length) {
 
 ObjString* allocateString(char* chars, int length, uint32_t hash) {
     //contiguous allocation for the chars array
+    vm.isCollecting = true;
     ObjString* string = (ObjString*)allocateObject(sizeof(ObjString) + sizeof(char) * length + 1, OBJ_STRING);
     string->length = length;
     memcpy(string->chars, chars, length);
     string->chars[length] = '\0';
     string->hash = hash;
 
-    push(OBJ_VAL(string));
     tableSet(&vm.strings, string, NIL_VAL);
-    pop();
+    vm.isCollecting = false;
 
     return string;
 }
@@ -191,7 +212,6 @@ ObjString* copyString(const char* chars, int length) {
     ObjString* interned = tableFindString(&vm.strings, chars, length, hash);
     //if interned we just return the rerence
     if (interned != NULL) return interned;
-
     char* heapChars = ALLOCATE(char, length + 1);
     memcpy(heapChars, chars, length);
     heapChars[length] = '\0';
@@ -248,6 +268,10 @@ void printObject(Value value) {
         // #endif
 
         break;
+        }
+        case OBJ_RANGE: {
+            printf("<range>");
+            break;
         }
         case OBJ_CLASS: {
             printf("class %s", AS_CLASS(value)->name->chars);

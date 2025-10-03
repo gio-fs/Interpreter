@@ -14,6 +14,7 @@ typedef enum {
     OBJ_CLOSURE,
     OBJ_UPVALUE,
     OBJ_DICTIONARY,
+    OBJ_RANGE,
     OBJ_CLASS,
     OBJ_INSTANCE
 } ObjType;
@@ -40,11 +41,11 @@ typedef struct {
 } ObjFunction;
 
 
-
 typedef Value (*NativeFn) (int argCount, Value* args);
 
 typedef struct {
     Obj obj;
+    bool isBuiltIn;
     NativeFn function;
 } ObjNative;
 
@@ -61,8 +62,6 @@ typedef struct {
     ObjUpvalue** upvalues;
     int upvalueCount;
 } ObjClosure;
-
-
 
 typedef struct {
     Obj obj;
@@ -81,20 +80,27 @@ typedef struct {
     ObjClass* klass;
     Table fields;
 } ObjInstance;
+
 typedef struct {
     Obj obj;
-    ObjInstance* instance;
+    ObjClass* klass;
     ValueType type;
     ValueArray values;
 } ObjArray;
 
 typedef struct {
     Obj obj;
-    ObjInstance* instance;
+    ObjClass* klass;
     Table map;
     EntryList entries;
 } ObjDictionary;
 
+typedef struct {
+    Obj obj;
+    double current;
+    double start;
+    double end;
+} ObjRange;
 
 #define OBJ_TYPE(value)     ((AS_OBJ(value))->type)
 
@@ -107,6 +113,7 @@ typedef struct {
 #define IS_CLASS(value)         isObjType(value, OBJ_CLASS)
 #define IS_INSTANCE(value)      isObjType(value, OBJ_INSTANCE)
 #define IS_BOUND_METHOD(value)  isObjType(value, OBJ_BOUND_METHOD)
+#define IS_RANGE(value)         isObjType(value, OBJ_RANGE)
 
 #define AS_FUNCTION(value)      ((ObjFunction*)AS_OBJ(value))
 #define AS_STRING(value)        ((ObjString*)AS_OBJ(value)) //points to an objstring on heap
@@ -119,19 +126,22 @@ typedef struct {
 #define AS_CLASS(value)         ((ObjClass*)AS_OBJ(value))
 #define AS_INSTANCE(value)      ((ObjInstance*)AS_OBJ(value))
 #define AS_BOUND_METHOD(value)  ((ObjBoundMethod*)AS_OBJ(value))
+#define AS_RANGE(value)         ((ObjRange*)AS_OBJ(value))
 
 ObjFunction* newFunction();
 ObjArray* newArray();
 ObjClosure* newClosure(ObjFunction* function);
 ObjUpvalue*newUpvalue(Value* value);
 ObjDictionary* newDictionary();
+ObjRange* newRange(double start, double end);
 ObjClass* newClass(ObjString* name);
 ObjInstance* newInstance(ObjClass* klass);
 ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method);
 bool appendArray(ObjArray* arr, Value value);
 bool arraySet(ObjArray* array, int index, Value value);
 bool arrayGet(ObjArray* arr, int index, Value* value);
-ObjNative* newNative(NativeFn function);
+Value arrayPop(ObjArray* arr);
+ObjNative* newNative(NativeFn function, bool isBuiltIn);
 ObjString* copyString(const char* chars, int length);
 ObjString* allocateString(char* chars, int length, uint32_t hash);
 ObjString* takeString(char* chars, int length);

@@ -27,13 +27,16 @@ typedef struct {
     Table globals;
     Table constGlobals;
     ValueArray queue[64];
+    int queueCount[64];
     int firstIn[64];
     int nestingLevel;
     ObjUpvalue* openUpvalues;
+    ObjString* array_NativeString;
+    ObjString* dict_NativeString;
 
     size_t bytesAllocated;
     size_t nextGC;
-    
+
     Obj* objects;
     int grayCount;
     int grayCapacity;

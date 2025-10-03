@@ -2,6 +2,7 @@
 #define clox_compiler_h
 #include "vm.h"
 #include "clox_scanner.h"
+#include "table.h"
 
 typedef struct {
     Token previous;

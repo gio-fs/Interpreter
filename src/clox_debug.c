@@ -49,7 +49,7 @@ static int jumpInstruction(const char* name, int sign, Chunk* chunk, int offset)
 }
 
 int getLine(Chunk* chunk, int index) {
-    
+
     int count = 0;
 
     for(int i = 0; i < chunk->lineArray.count; i++) {
@@ -223,10 +223,8 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return byteInstruction("OP_PUSH_FROM", chunk, offset);
         case OP_CHECK_TYPE:
             return byteInstruction("OP_CHECK_TYPE", chunk, offset);
-        case OP_ARRAY_IN_RANGE:
-            return simpleInstruction("OP_ARRAY_IN_RANGE", offset);
-        case OP_ITER_IN_RANGE:
-            return byteInstruction("OP_ITER_IN_RANGE", chunk, offset);
+        case OP_RANGE:
+            return simpleInstruction("OP_RANGE", offset);
         case OP_DEQUE:
             return simpleInstruction("OP_DEQUE", offset);
         case OP_METHOD:
@@ -237,7 +235,7 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return constantInstruction("OP_GET_PROPERTY", chunk, offset);
         case OP_SET_PROPERTY:
             return constantInstruction("OP_SET_PROPERTY", chunk, offset);
-        case OP_DEFINE_PROPERTY: 
+        case OP_DEFINE_PROPERTY:
             return simpleInstruction("OP_DEFINE_PROPERTY", offset);
         default:
             printf("Unknown opcode %d\n", instruction);
