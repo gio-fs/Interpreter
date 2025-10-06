@@ -80,7 +80,7 @@ bool arraySet(ObjArray* arr, int index, Value value) {
 }
 
 bool arrayGet(ObjArray* arr, int index, Value* value) {
-    if (index < 0 || index >= arr->values.count) {
+    if (index < 0 || index > arr->values.count) {
         return false;
     }
 
@@ -148,6 +148,7 @@ ObjClass* newClass(ObjString* name) {
 
 ObjInstance* newInstance(ObjClass* klass) {
     ObjInstance* instance = ALLOCATE_OBJ(ObjInstance, OBJ_INSTANCE);
+    initTable(&instance->fields);
     instance->klass = klass;
     // vm.isCollecting = true;
     // initTable(&instance->fields);
@@ -178,6 +179,7 @@ uint32_t hashString(const char* chars, int length) {
 
 ObjString* allocateString(char* chars, int length, uint32_t hash) {
     //contiguous allocation for the chars array
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjString* string = (ObjString*)allocateObject(sizeof(ObjString) + sizeof(char) * length + 1, OBJ_STRING);
     string->length = length;
@@ -186,7 +188,7 @@ ObjString* allocateString(char* chars, int length, uint32_t hash) {
     string->hash = hash;
 
     tableSet(&vm.strings, string, NIL_VAL);
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
 
     return string;
 }

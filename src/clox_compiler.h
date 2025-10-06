@@ -49,7 +49,8 @@ typedef enum {
     TYPE_FUNCTION,
     TYPE_SCRIPT,
     TYPE_LAMBDA,
-    TYPE_METHOD
+    TYPE_METHOD,
+    TYPE_INITIALIZER
 } FunctionType;
 
 typedef struct Compiler {
@@ -67,6 +68,12 @@ typedef struct Compiler {
     int nestedCount;
     int nestedLevel;
 } Compiler;
+
+typedef struct ClassCompiler {
+    struct ClassCompiler* enclosing;
+    Token name;
+    bool hasSuper;
+} ClassCompiler;
 
 typedef struct {
     int breakJumps[UINT8_MAX];

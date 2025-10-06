@@ -152,16 +152,7 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return offset;
         }
         case OP_FOR_EACH: {
-            uint8_t slot = chunk->code[offset + 1];
-            uint8_t slot2 = chunk->code[offset + 2];
-            printf("%-16s %4d, %4d\n", "OP_FOR_EACH", slot, slot2);
-            return offset + 3;
-        }
-        case OP_FOR_EACH_GLOBAL: {
-            uint8_t slot = chunk->code[offset + 1];
-            uint8_t slot2 = chunk->code[offset + 2];
-            printf("%-16s %4d, %4d\n", "OP_FOR_EACH_GLOBAL", slot, slot2);
-            return offset + 3;
+            return simpleInstruction("OP_FOR_EACH", offset);
         }
         case OP_SWAP: {
             uint8_t slot1 = chunk->code[offset + 1];
@@ -237,6 +228,18 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return constantInstruction("OP_SET_PROPERTY", chunk, offset);
         case OP_DEFINE_PROPERTY:
             return simpleInstruction("OP_DEFINE_PROPERTY", offset);
+        case OP_INVOKE: {
+            uint8_t constant = chunk->code[offset + 1];
+            uint8_t argCount = chunk->code[offset + 2];
+            printf("%-16s (%d args) %4d '", "OP_INVOKE", argCount, constant);
+            printValue(chunk->constants.values[constant]);
+            printf("'\n");
+            return offset + 3;
+        }
+        case OP_INHERIT:
+            return simpleInstruction("OP_INHERIT", offset);
+        case OP_GET_SUPER:
+            return constantInstruction("OP_GET_SUPER", chunk, offset);
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;

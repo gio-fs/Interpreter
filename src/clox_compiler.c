@@ -12,7 +12,7 @@
 Parser parser;
 
 Compiler* current = NULL;
-
+ClassCompiler* currentClass = NULL;
 Chunk* compilingChunk;
 
 static void grouping(bool canAssign);
@@ -34,6 +34,7 @@ static void match(bool canAssign);
 static void inRange(bool canAssign);
 static void dot(bool canAssign);
 static void this_(bool canAssign);
+static void super_(bool canAssign);
 
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]          = {grouping,  call,       PREC_CALL},
@@ -70,8 +71,8 @@ ParseRule rules[] = {
     [TOKEN_OR]                  = {NULL,      or_,        PREC_OR},
     [TOKEN_PRINT]               = {NULL,      NULL,       PREC_NONE},
     [TOKEN_RETURN]              = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_SUPER]               = {NULL,      NULL,       PREC_NONE},
-    [TOKEN_THIS]                = {this_,      NULL,       PREC_NONE},
+    [TOKEN_SUPER]               = {super_,    NULL,       PREC_NONE},
+    [TOKEN_THIS]                = {this_,     NULL,       PREC_NONE},
     [TOKEN_TRUE]                = {literal,   NULL,       PREC_NONE},
     [TOKEN_VAR]                 = {NULL,      NULL,       PREC_NONE},
     [TOKEN_WHILE]               = {NULL,      NULL,       PREC_NONE},
@@ -117,6 +118,7 @@ static void initCompiler(Compiler* compiler, FunctionType type) {
     if (type != TYPE_FUNCTION && type != TYPE_LAMBDA) {
         local->name.start = "this";
         local->name.length = 4;
+
     } else {
         local->name.start = "";
         local->name.length = 0;
@@ -360,8 +362,12 @@ static void emitLoop(int loopStart) {
 }
 
 static void emitReturn(FunctionType type) {
-    if (type == TYPE_LAMBDA) return;
-    emitByte(OP_NIL);
+
+    if (current->type == TYPE_INITIALIZER) {
+        emitBytes(OP_GET_LOCAL, 0);
+    } else {
+        emitByte(OP_NIL);
+    }
     emitByte(OP_RETURN);
 }
 
@@ -546,12 +552,12 @@ static uint8_t argumentList() {
 static void call(bool canAssign) {
     uint8_t argCount = argumentList();
 
-    if (matchCurrent(TOKEN_LEFT_SQUARE_BRACE)) {
-        expression();
-        consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
+    // if (matchCurrent(TOKEN_LEFT_SQUARE_BRACE)) {
+    //     expression();
+    //     consume(TOKEN_RIGHT_SQUARE_BRACE, "Expect ']' after indexing expression");
 
-        emitBytes(OP_ARRAY_CALL, argCount);
-    }
+    //     emitBytes(OP_ARRAY_CALL, argCount);
+    // }
 
     emitBytes(OP_CALL, argCount);
 }
@@ -577,7 +583,7 @@ static void getVariable(OpCode opcodes[], int arg) {
 
 }
 
-static bool namedVariable(Token name, bool canAssign) {
+static void namedVariable(Token name, bool canAssign) {
     int arg = resolveLocal(current, &name);
     int _indexingCount = 0;
     bool compoundAssign = false;
@@ -618,8 +624,27 @@ static bool namedVariable(Token name, bool canAssign) {
     TokenType compoundType;
     if (compoundAssign) compoundType = parser.previous.type;
 
-    if (_indexingCount > 0) {
-        if (_indexingCount > 1) emitBytes(OP_REVERSE_N, _indexingCount);
+    if (_indexingCount == 1) {
+        // printf("entered idx = 1\n");
+        if (canAssign && matchCurrent(TOKEN_EQUAL)) {
+            if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
+                error("Cannot assign to const variable.");
+            }
+            parsePrecedence(PREC_EQUALITY);
+            emitBytes(setElemOp, arg);
+
+        } else if (canAssign && compoundAssign) {
+            emitBytes(OP_PUSH_FROM, 0);
+            emitBytes(getElemOp, arg);
+            parsePrecedence(PREC_EQUALITY);
+            compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
+            emitBytes(setElemOp, arg);
+
+        } else emitBytes(getElemOp, arg);
+    }
+
+    else if (_indexingCount > 1) {
+        emitBytes(OP_REVERSE_N, _indexingCount);
         emitBytes(getElemOp, arg);
 
         // if we want to assign to an indirect variable we have to keep
@@ -638,39 +663,39 @@ static bool namedVariable(Token name, bool canAssign) {
                 emitBytes(OP_PUSH_FROM, 1);
                 emitBytes(OP_PUSH_FROM, 1);
                 emitByte(OP_GET_ELEMENT_FROM_TOP);
-                current->localCount++;
             }
 
             parsePrecedence(PREC_EQUALITY);
 
             if (compoundAssign) {
                 emitByte(OP_ADD);
-                current->localCount--;
+                // emitBytes(OP_PUSH_FROM, 2);
+                // emitThreeBytes(OP_SWAP, 0, 1);
             }
 
             emitByte(OP_INDIRECT_STORE);
         }
 
-        return setOp == OP_SET_GLOBAL? true : false;
     }
 
-    if (canAssign && matchCurrent(TOKEN_EQUAL)) {
-        if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
-            error("Cannot assign to const variable.");
-        }
+    else {
+        if (canAssign && matchCurrent(TOKEN_EQUAL)) {
+            if (setOp == OP_SET_LOCAL && current->locals[arg].isConst) {
+                error("Cannot assign to const variable.");
+            }
 
-        expression();
-        setVariable(opcodes, arg);
+            expression();
+            setVariable(opcodes, arg);
 
-    } else if (canAssign && compoundAssign) {
-        setVariable(opcodes, arg);
-        expression();
-        compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
-        setVariable(opcodes, arg);
+        } else if (canAssign && compoundAssign) {
+            setVariable(opcodes, arg);
+            expression();
+            compoundType == TOKEN_MINUS_EQUAL? emitByte(OP_SUBTRACT) : emitByte(OP_ADD);
+            setVariable(opcodes, arg);
 
-    } else getVariable(opcodes, arg);
+        } else getVariable(opcodes, arg);
+    }
 
-    return arg;
 }
 
 static void declareVariable(bool isConst) {
@@ -879,13 +904,37 @@ static void dot(bool canAssign) {
     if (canAssign && matchCurrent(TOKEN_EQUAL)) {
         expression();
         emitBytes(OP_SET_PROPERTY, name);
-    } else {
+    }
+    else if (matchCurrent(TOKEN_LEFT_PAREN)) {
+        uint8_t argc = argumentList();
+        emitThreeBytes(OP_INVOKE, name, argc);
+    }
+    else {
         emitBytes(OP_GET_PROPERTY, name);
     }
 }
 
 static void this_(bool canAssign) {
+    if (currentClass == NULL) {
+        error("Can't use 'this' outside of classes");
+        return;
+    }
     variable(false);
+}
+
+static void super_(bool canAssign) {
+    if (currentClass == NULL) {
+        error("Can't use 'super' keyword outside classes");
+    } else if (!currentClass->hasSuper) {
+        error("Can't use 'super' in a base class");
+    }
+    consume(TOKEN_DOT, "Expect '.' after super keyword");
+    consume(TOKEN_IDENTIFIER, "Expect property name");
+    uint32_t arg = identifierConstant(&parser.previous);
+
+    namedVariable(makeSyntheticToken("this"), false);
+    namedVariable(makeSyntheticToken("super"), false);
+    emitBytes(OP_GET_SUPER, arg);
 }
 
 
@@ -945,8 +994,13 @@ static void varDeclaration(bool isConst) {
 static void method() {
     consume(TOKEN_IDENTIFIER, "Expected method name");
     uint32_t constant = identifierConstant(&parser.previous);
-
-    function(TYPE_METHOD);
+    FunctionType type = TYPE_METHOD;
+    if (parser.previous.length == 4
+            && memcmp(parser.previous.start, "init", 4) == 0) {
+                printf("Init\n");
+                type = TYPE_INITIALIZER;
+            }
+    function(type);
     emitBytes(OP_METHOD, constant);
 }
 
@@ -968,6 +1022,29 @@ static void classDeclaration() {
     emitBytes(OP_CLASS, nameConstant);
     defineVariable(nameConstant, false);
 
+    ClassCompiler classCompiler;
+    classCompiler.name = className;
+    classCompiler.enclosing = currentClass;
+    classCompiler.hasSuper = false;
+    currentClass = &classCompiler;
+
+    if (matchCurrent(TOKEN_EXPANDS)) {
+        consume(TOKEN_IDENTIFIER, "Expect super name");
+        variable(false);
+
+        if (memcmp(className.start, parser.previous.start, className.length) == 0) {
+            error("A class cannot expand itself");
+        }
+
+        beginScope();
+        addLocal(makeSyntheticToken("super"), true);
+        defineVariable(0, true);
+
+        namedVariable(className, false);
+        emitByte(OP_INHERIT);
+        classCompiler.hasSuper = true;
+    }
+
     namedVariable(className, false);
     consume(TOKEN_LEFT_BRACE, "Expect '{' before class body");
     while (!checkType(TOKEN_RIGHT_BRACE) && !checkType(TOKEN_EOF)) {
@@ -982,6 +1059,12 @@ static void classDeclaration() {
     }
     consume(TOKEN_RIGHT_BRACE, "Expect '}' before class body");
     emitByte(OP_POP);
+
+    if (classCompiler.hasSuper) {
+        endScope();
+    }
+
+    currentClass = currentClass->enclosing;
 }
 
 
@@ -1016,7 +1099,6 @@ static void function(FunctionType type) {
 
     // creating function object
     ObjFunction* function = endCompiler(type);
-
     emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
 
     for (int i = 0; i < function->upvalueCount; i++) {
@@ -1273,6 +1355,8 @@ static void returnStatement() {
     // if we're outside functions, it's an error to return from top-level
     if (current->type == TYPE_SCRIPT) {
         error("Can't return from top-level function.");
+    } else if (current->type == TYPE_INITIALIZER) {
+        error("Can't return a value from initializer");
     }
 
     if (matchCurrent(TOKEN_SEMICOLON)) {

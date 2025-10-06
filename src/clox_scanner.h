@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 typedef enum {
-
     // Single-character tokens.
     TOKEN_LEFT_PAREN, TOKEN_RIGHT_PAREN,
     TOKEN_LEFT_BRACE, TOKEN_RIGHT_BRACE,
@@ -24,7 +23,7 @@ typedef enum {
     TOKEN_PRINT, TOKEN_RETURN, TOKEN_SUPER, TOKEN_THIS,
     TOKEN_TRUE, TOKEN_VAR, TOKEN_WHILE, TOKEN_CONST,
     TOKEN_CONTINUE, TOKEN_SWITCH, TOKEN_BREAK, TOKEN_LAMBDA,
-    TOKEN_IN, TOKEN_MATCH, TOKEN_MATCHES_TO,
+    TOKEN_IN, TOKEN_MATCH, TOKEN_MATCHES_TO, TOKEN_EXPANDS,
 
     TOKEN_ERROR,
     NULL_TOKEN,
@@ -45,6 +44,7 @@ typedef struct {
     int line;
     bool isInInterpolation;
     bool scannedInterpEnd;
+    bool ignoreWhiteSpaces;
 } Scanner;
 
 

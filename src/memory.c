@@ -186,6 +186,7 @@ static void markRoots() {
     markTable(&vm.constGlobals);
     markObj((Obj*)vm.array_NativeString);
     markObj((Obj*)vm.dict_NativeString);
+    markObj((Obj*)vm.initString);
     markCompilerRoots();
 }
 
@@ -323,17 +324,17 @@ void collectGarbage() {
     // for (int i = 0; i < 10000; i++) printf("--gc begin\n");
 #endif
     vm.isCollecting = true;
-    size_t before = vm.bytesAllocated;
+    unsigned long long before = vm.bytesAllocated;
 
     markRoots();
     traceReferences();
     tableRemoveWhite(&vm.strings);
     sweep();
 
-    size_t survived = vm.bytesAllocated;
+    unsigned long long survived = vm.bytesAllocated;
     double rate = (double)(survived / before);
 
-    if (rate > 0.80) {
+    if (rate > 0.75) {
         vm.nextGC = survived * 4;
     } else if (rate > 0.5) {
         vm.nextGC = survived * 3;
@@ -345,9 +346,10 @@ void collectGarbage() {
         vm.nextGC = 1024 * 1024;
     }
 
+
 // #ifdef DEBUG_LOG_GC
     // for (int i = 0; i < 10000; i++) printf("--end\n");
-    printf("    Collected %ld bytes (from %ld to %ld), next at %ld\n",
+    printf("    Collected %lld bytes (from %lld to %lld), next at %lld\n",
                     before - vm.bytesAllocated, before, vm.bytesAllocated, vm.nextGC);
 // #endif
 

@@ -100,7 +100,7 @@ void runtimeError(const char* format, ...) {
         ObjFunction* function = frame->closure->function;
 
         // -1 because the IP is sitting on the next instruction to be
-        // executed.
+        // executed
         size_t instruction = frame->ip - function->chunk.code - 1;
         int line = getLine(&function->chunk, (int)instruction);
         fprintf(stderr, "[line %d] in ", line);
@@ -176,11 +176,29 @@ static bool callValue(Value callee, int argCount) {
             }
             case OBJ_CLASS: {
                 ObjClass* klass = AS_CLASS(callee);
+
                 vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
+                // ObjString* check = tableFindString(&klass->methods, "init", 4, hashString("init", 4));
+                // printValue(OBJ_VAL(check));
+                // printf("\n");
+                // printf("Equal: %d\n", valuesEqual(OBJ_VAL(check), OBJ_VAL(vm.initString)));
+
+                // printf("\n");
+                // printf("initString->chars: %s, initString->hash: %d, initString->length: %d\n", vm.initString->chars, vm.initString->hash, vm.initString->length);
+                // printf("array->chars: %s, array->hash: %d, array->length: %d\n", vm.array_NativeString->chars, vm.array_NativeString->hash, vm.array_NativeString->length);
+                Value init;
+                if (tableGet(&klass->methods, vm.initString, &init)) {
+                    return call(AS_CLOSURE(init), argCount);
+                }
+                else if (argCount != 0) {
+                    runtimeError("Expected 0 args but got %d", argCount);
+                    return false;
+                }
                 return true;
             }
             case OBJ_BOUND_METHOD: {
                 ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
+                vm.stackTop[-argCount - 1] = bound->receiver;
                 return call(bound->method, argCount);
             }
             default:
@@ -244,7 +262,11 @@ static void defineMethod(ObjString* name) {
     // printf("\n");
     Value method = peek(0);
     ObjClass* klass = AS_CLASS(peek(1));
+
     tableSet(&klass->methods, name, method);
+    Value check;
+    tableGet(&klass->methods, name, &check);
+    // printValue(check);
     pop();
 }
 
@@ -317,6 +339,41 @@ static bool bindNativeMethod(ObjClass* klass, ObjString* name) {
 
     push(OBJ_VAL(native));
     return true;
+}
+
+static bool invokeFromClass(ObjClass* klass, ObjString* name, int argc) {
+    Value method;
+    if (!tableGet(&klass->methods, name, &method)) {
+        runtimeError("Undefined property '%s'", name->chars);
+        return false;
+    }
+
+    return call(AS_CLOSURE(method), argc);
+}
+
+static bool invokeFromNative(ObjClass* klass, ObjString* name, int argc) {
+    Value method;
+    if (!tableGet(&klass->methods, name, &method)) {
+        runtimeError("Undefined property '%s'", name->chars);
+        return false;
+    }
+
+    NativeFn native = AS_NATIVE(method);
+    // printValue(peek(argc));
+    // printf("\n");
+    Value result = native(argc, vm.stackTop - argc);
+    vm.stackTop -= argc + 1;
+    push(result);
+    return true;
+}
+
+static bool invoke(ObjString* name, int argc) {
+    Value receiver = peek(argc);
+    // ObjClass* nativeClass = NULL;
+
+    ObjInstance* instance = AS_INSTANCE(receiver);
+    return invokeFromClass(instance->klass, name, argc);
+
 }
 
 ObjString* valueTypeToString(ValueType type) {
@@ -416,6 +473,7 @@ static bool deque(ValueArray* arr, Value* value) {
 
 
 static void concatenate() {
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjString* b = valueToString(pop());
     vm.isCollecting = true;
@@ -438,7 +496,7 @@ static void concatenate() {
 
     ObjString* result = takeString(newString, length);
     push(OBJ_VAL(result));
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
 }
 
 
@@ -454,7 +512,7 @@ static bool isIterable(Value value) {
 
 
 static Value array_AddNative(int argCount, Value* args) {
-    if (!IS_ARRAY(args[-2])) {
+    if (!IS_ARRAY(args[-1])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
     }
@@ -463,13 +521,13 @@ static Value array_AddNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    ObjArray* arr = AS_ARRAY(args[-2]);
+    ObjArray* arr = AS_ARRAY(args[-1]);
     appendArray(arr, args[0]);
-    return args[0];
+    return OBJ_VAL(arr);
 }
 
 static Value array_SetNative(int argCount, Value* args) {
-    if (!IS_ARRAY(args[-2])) {
+    if (!IS_ARRAY(args[-1])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
     }
@@ -478,13 +536,13 @@ static Value array_SetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    ObjArray* arr = AS_ARRAY(args[-2]);
+    ObjArray* arr = AS_ARRAY(args[-1]);
     arraySet(arr, AS_NUMBER(args[0]), args[1]);
     return args[1];
 }
 
 static Value array_GetNative(int argCount, Value* args) {
-    if (!IS_ARRAY(args[-2])) {
+    if (!IS_ARRAY(args[-1])) {
         runtimeError("Value is not an array");
         return NIL_VAL;
     }
@@ -493,7 +551,7 @@ static Value array_GetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    ObjArray* arr = AS_ARRAY(args[-2]);
+    ObjArray* arr = AS_ARRAY(args[-1]);
     Value value;
     if (!arrayGet(arr, AS_NUMBER(args[0]), &value)) {
         // runtimeError("Element '%d' of array doesn't exist", AS_NUMBER(args[0]));
@@ -503,7 +561,7 @@ static Value array_GetNative(int argCount, Value* args) {
 }
 
 static Value array_PopNative(int argCount, Value* args) {
-    if (!IS_ARRAY(args[-2])) {
+    if (!IS_ARRAY(args[-1])) {
         runtimeError("Object is not an array");
         return NIL_VAL;
     }
@@ -516,7 +574,7 @@ static Value array_PopNative(int argCount, Value* args) {
 }
 
 static Value dict_AddNative(int argCount, Value* args) {
-    if (!IS_MAP(args[-2])) {
+    if (!IS_MAP(args[-1])) {
         runtimeError("Value is not a map");
         return NIL_VAL;
     }
@@ -526,7 +584,7 @@ static Value dict_AddNative(int argCount, Value* args) {
     }
     vm.isCollecting = true;
 
-    ObjDictionary* dict = AS_MAP(args[-2]);
+    ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
 
     Value value;
@@ -543,11 +601,11 @@ static Value dict_AddNative(int argCount, Value* args) {
     writeEntryList(&dict->entries, entry);
 
     vm.isCollecting = false;
-    return NIL_VAL;
+    return OBJ_VAL(dict);
 }
 
 static Value dict_SetNative(int argCount, Value* args) {
-    if (!IS_MAP(args[-2])) {
+    if (!IS_MAP(args[-1])) {
         runtimeError("Value is not a map");
         return NIL_VAL;
     }
@@ -557,7 +615,7 @@ static Value dict_SetNative(int argCount, Value* args) {
     }
 
     vm.isCollecting = true;
-    ObjDictionary* dict = AS_MAP(args[-2]);
+    ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
 
     tableSet(&dict->map, key, args[1]);
@@ -566,7 +624,7 @@ static Value dict_SetNative(int argCount, Value* args) {
 }
 
 static Value dict_GetNative(int argCount, Value* args) {
-    if (!IS_MAP(args[-2])) {
+    if (!IS_MAP(args[-1])) {
         runtimeError("Value is not a map");
         return NIL_VAL;
     }
@@ -575,7 +633,7 @@ static Value dict_GetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
     vm.isCollecting = true;
-    ObjDictionary* dict = AS_MAP(args[-2]);
+    ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
 
     Value value;
@@ -588,6 +646,28 @@ static Value dict_GetNative(int argCount, Value* args) {
     return value;
 }
 
+static Value dict_RemoveNative(int argCount, Value* args) {
+    if (!IS_MAP(args[-1])) {
+        runtimeError("Value is not a map");
+        return NIL_VAL;
+    }
+    if (argCount != 1) {
+        runtimeError("Dict.remove() expects one argument: key");
+        return NIL_VAL;
+    }
+    vm.isCollecting = true;
+    ObjDictionary* dict = AS_MAP(args[-1]);
+    ObjString* key = valueToString(args[0]);
+
+    if (!tableDelete(&dict->map, key)) {
+        // runtimeError("Key not found");
+        return NUMBER_VAL(0);
+    }
+
+    vm.isCollecting = false;
+    return NIL_VAL;
+}
+
 void initVM() {
     vm.stack.count = 0;
     vm.stack.capacity = STACK_INIT_CAPACITY;
@@ -597,18 +677,7 @@ void initVM() {
     vm.objects = NULL;
     vm.bytesAllocated = 0;
     vm.nextGC = 1024 * 1024;
-
-    vm.array_NativeString = NULL;
-    vm.array_NativeString = copyString("__Array__", 9);
-    vm.dict_NativeString = NULL;
-    vm.dict_NativeString = copyString("__Dict__", 8);
-
-    vm.grayCount = 0;
-    vm.grayCapacity = 0;
-    vm.grayStack = NULL;
-
     vm.isCollecting = false;
-
 
     initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
@@ -617,6 +686,13 @@ void initVM() {
     initTable(&vm.globals);
     initTable(&vm.constGlobals);
 
+    vm.grayCount = 0;
+    vm.grayCapacity = 0;
+    vm.grayStack = NULL;
+
+    vm.array_NativeString = copyString("__Array__", 9);
+    vm.dict_NativeString = copyString("__Dict__", 8);
+    vm.initString = copyString("init", 4);
 
     defineNative("clock", clockNative);
     ObjClass* array = defineBuiltinClass(vm.array_NativeString);
@@ -628,6 +704,7 @@ void initVM() {
     defineBuiltinMethod(dict, "add", dict_AddNative);
     defineBuiltinMethod(dict, "set", dict_SetNative);
     defineBuiltinMethod(dict, "get", dict_GetNative);
+    defineBuiltinMethod(dict, "remove", dict_RemoveNative);
 }
 
 void freeVM() {
@@ -648,6 +725,9 @@ void freeVM() {
     freeTable(&vm.strings);
     freeTable(&vm.globals);
     freeTable(&vm.constGlobals);
+    vm.initString = NULL;
+    vm.array_NativeString = NULL;
+    vm.dict_NativeString = NULL;
 
     freeObjects();
 }
@@ -673,13 +753,13 @@ static InterpretResult run() {
         } while(0)
 
     #ifdef DEBUG_TRACE_EXECUTION
-        int count = 0;
+        // int count = 0;
     #endif
     for (;;) {
 
         #ifdef DEBUG_TRACE_EXECUTION
-            count++;
-            if (count % 50 == 0) {
+            // count++;
+            // if (count % 50 == 0) {
             disassembleInstruction(&frame->closure->function->chunk,
                 (int)(frame->ip - frame->closure->function->chunk.code));
 
@@ -696,7 +776,7 @@ static InterpretResult run() {
             }
 
             printf("\n\n");
-            }
+            // }
 
         #endif
 
@@ -967,9 +1047,9 @@ static InterpretResult run() {
                         int index = AS_NUMBER(elementIndex);
 
                         if (!arrayGet(arr, index, &value)) {
-                            // ObjString* name = valueTypeToString(arr->type);
-                            // runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
-                            goto endBranch;
+                            ObjString* name = valueTypeToString(arr->type);
+                            runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
+                            // goto endBranch;
                         }
 
                         break;
@@ -982,15 +1062,16 @@ static InterpretResult run() {
                         vm.isCollecting = wasCollecting;
 
                         if (!tableGet(&dict->map, key, &value)) {
-                            // runtimeError("Key '%s' not found in dictionary\n", key->chars);
-                            goto endBranch;
+                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                            // goto endBranch;
                         }
 
                         break;
                     }
                 }
 
-                endBranch: break;
+                // endBranch:
+                // value = NIL_VAL;
 
                 push(value);
                 break;
@@ -998,7 +1079,7 @@ static InterpretResult run() {
             case OP_SET_ELEMENT: {
                 int slot = READ_BYTE();
                 Value setVal = pop();
-                Value elementIndex = peek(0);
+                Value elementIndex = pop();
 
                 if (!isIterable(frame->slots[slot])) {
                     runtimeError("Value must be of indexeable type");
@@ -1456,8 +1537,10 @@ static InterpretResult run() {
             case OP_REVERSE_N: {
                 int n = READ_BYTE();
                 Value values[n];
+                printf("n: %d\n", n);
                 for (int i = 0; i < n; i++) {
                     values[i] = pop();
+                    // printValue(values[i]);
                 }
 
                 for (int i = 0; i < n; i++) {
@@ -1644,6 +1727,13 @@ static InterpretResult run() {
                 if (IS_INSTANCE(peek(0))) {
                     ObjInstance* instance = AS_INSTANCE(peek(0));
 
+                    Value value;
+                    if (tableGet(&instance->fields, name, &value)) {
+                        pop();
+                        push(value);
+                        break;
+                    }
+
                     if (!bindMethod(instance->klass, name)) {
                         return INTERPRET_RUNTIME_ERROR;
                     }
@@ -1675,9 +1765,14 @@ static InterpretResult run() {
                 ObjString* fieldName = READ_STRING();
                 Value constValue;
 
-                if (tableGet(&instance->fields, fieldName, &constValue)) {
+                if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
+                    //  0 -> mutable
+                    // -1 -> const but has to be initialized
+                    // -2 -> const initialized
                     if (valuesEqual(constValue, NUMBER_VAL(-1))) {
-                        runtimeError("Cannot modify const field");
+                        tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
+                    } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
+                        runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
                         return INTERPRET_RUNTIME_ERROR;
                     }
                 }
@@ -1694,10 +1789,48 @@ static InterpretResult run() {
             case OP_METHOD:
                 defineMethod(READ_STRING());
                 break;
-            case OP_DEFINE_PROPERTY:
+            case OP_DEFINE_PROPERTY: {
                 ObjString* name = READ_STRING();
-                defineProperty(name, READ_BYTE());
+                bool isConst = READ_BYTE();
+                defineProperty(name, isConst);
                 break;
+            }
+            case OP_INVOKE: {
+                ObjString* method = READ_STRING();
+                int argc = READ_BYTE();
+                ObjClass* nativeClass = NULL;
+                if (isBuiltInAndSet(peek(argc), &nativeClass)) {
+                    if (!invokeFromNative(nativeClass, method, argc)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                } else {
+                    if (!invoke(method, argc)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+                }
+
+                break;
+            }
+            case OP_INHERIT: {
+                ObjClass* klass = AS_CLASS(pop());
+                if (!IS_CLASS(peek(0))) {
+                    runtimeError("Super must be a class");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                tableAddAll(&AS_CLASS(peek(0))->methods, &klass->methods);
+                break;
+            }
+            case OP_GET_SUPER: {
+                ObjString* name = READ_STRING();
+                ObjClass* super = AS_CLASS(pop());
+
+                if (!bindMethod(super, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
         }
     }
 

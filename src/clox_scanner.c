@@ -11,6 +11,7 @@ void initScanner(const char* source) {
     scanner.current = source;
     scanner.isInInterpolation = false;
     scanner.scannedInterpEnd = false;
+    scanner.ignoreWhiteSpaces = true;
     scanner.line = 1;
 }
 
@@ -173,9 +174,16 @@ static TokenType identifierType() {
                 }
             }
             break;
-
-        case 'e': return checkKeyword(1, 3, "lse", TOKEN_ELSE);
-        case 'i': if (scanner.current - scanner.start > 1) {
+        case 'e':
+            if (scanner.current - scanner.start > 1) {
+                switch (scanner.start[1]) {
+                    case 'l': return checkKeyword(2, 2, "se", TOKEN_ELSE);
+                    case 'x': return checkKeyword(2, 5, "pands", TOKEN_EXPANDS);
+                }
+            }
+            break;
+        case 'i':
+            if (scanner.current - scanner.start > 1) {
                 switch (scanner.start[1]) {
                     case 'f': return checkKeyword(1, 1, "f", TOKEN_IF);
                     case 'n': return checkKeyword(1, 1, "n", TOKEN_IN);
@@ -223,7 +231,10 @@ static Token identifier() {
 
 
 Token scanToken() {
-    skipWhitespace();
+    if (scanner.ignoreWhiteSpaces) {
+        skipWhitespace();
+    }
+    scanner.ignoreWhiteSpaces = true;
 
     scanner.start = scanner.current;
 
@@ -261,6 +272,7 @@ Token scanToken() {
             if (scanner.isInInterpolation) {
                 scanner.isInInterpolation = false;
                 scanner.scannedInterpEnd = true;
+                scanner.ignoreWhiteSpaces = false;
                 return makeToken(TOKEN_SEMICOLON);
 
             } else return makeToken(TOKEN_RIGHT_BRACE);
@@ -284,7 +296,7 @@ Token scanToken() {
         case '?': return makeToken(TOKEN_QUESTION);
         case ':': return makeToken(TOKEN_COLON);
         case '"': return string();
-        
+
 
     }
 }

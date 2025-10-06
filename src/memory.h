@@ -2,6 +2,11 @@
 #define clox_memory_h
 #include "common.h"
 #include "object.h"
+typedef struct {
+    Value* start;
+    size_t nurserySize;
+    Value* end;
+} Heap;
 
 #define FRAMES_INIT_CAPACITY 64
 #define STACK_INIT_CAPACITY (FRAMES_INIT_CAPACITY * UINT8_COUNT)

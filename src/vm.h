@@ -33,9 +33,11 @@ typedef struct {
     ObjUpvalue* openUpvalues;
     ObjString* array_NativeString;
     ObjString* dict_NativeString;
+    ObjString* initString;
+    bool canSetConstProp;
 
-    size_t bytesAllocated;
-    size_t nextGC;
+    unsigned long long bytesAllocated;
+    unsigned long long nextGC;
 
     Obj* objects;
     int grayCount;
