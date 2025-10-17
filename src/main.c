@@ -5,6 +5,7 @@
 #include "chunk.h"
 #include "clox_debug.h"
 #include "vm.h"
+#include "memory.h"
 
 static void repl() {
     char line[65536];
@@ -67,7 +68,6 @@ static void runFile(const char* path) {
 
 
 int main(int argc, const char* argv[]) {
-
     initVM();
 
     if (argc == 1) {

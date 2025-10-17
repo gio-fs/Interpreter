@@ -9,19 +9,17 @@
 #define ALLOCATE_OBJ(type, objectType) ((type*)allocateObject(sizeof(type), objectType))
 
 Obj* allocateObject(size_t size, ObjType type) {
-    Obj* obj = reallocate(NULL, 0, size);
+    Obj* obj = (Obj*)writeNursery(&heap.nursery, size);
+    // Obj* obj = reallocate(NULL, 0, size);
     obj->type = type;
     obj->isMarked = false;
-
-    obj->next = vm.objects;
-    vm.objects = obj;
-
-#ifdef DEBUG_LOG_GC
-    printf("%p allocate %ld for %d\n", (void*)obj, size, type);
-#endif
+    obj->age = 0;
+    obj->size = size;
+    obj->forwarded = NULL;
 
     return obj;
 }
+
 
 ObjFunction* newFunction() {
     ObjFunction* function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
@@ -62,7 +60,6 @@ bool appendArray(ObjArray* arr, Value value) {
     push(OBJ_VAL(arr));
     writeValueArray(&arr->values, value);
     pop();
-
     return true;
 }
 
@@ -122,9 +119,11 @@ ObjDictionary* newDictionary() {
     initTable(&dict->map);
     initEntryList(&dict->entries);
     Value dictClass;
+
     if (!tableGet(&vm.globals, vm.dict_NativeString, &dictClass)) {
         runtimeError("Native class '%s' not found", vm.dict_NativeString->chars);
     }
+
     dict->klass = AS_CLASS(dictClass);
     // printf("Created an instance of %s\n")
     return dict;
@@ -150,11 +149,6 @@ ObjInstance* newInstance(ObjClass* klass) {
     ObjInstance* instance = ALLOCATE_OBJ(ObjInstance, OBJ_INSTANCE);
     initTable(&instance->fields);
     instance->klass = klass;
-    // vm.isCollecting = true;
-    // initTable(&instance->fields);
-    // tableAddAll(&klass->fields, &instance->fields);
-    // tableAddAll(&klass->methods, &instance->fields);
-    // vm.isCollecting = false;
     return instance;
 }
 
@@ -179,16 +173,15 @@ uint32_t hashString(const char* chars, int length) {
 
 ObjString* allocateString(char* chars, int length, uint32_t hash) {
     //contiguous allocation for the chars array
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
     ObjString* string = (ObjString*)allocateObject(sizeof(ObjString) + sizeof(char) * length + 1, OBJ_STRING);
     string->length = length;
     memcpy(string->chars, chars, length);
     string->chars[length] = '\0';
     string->hash = hash;
 
+    push(OBJ_VAL(string));
     tableSet(&vm.strings, string, NIL_VAL);
-    vm.isCollecting = wasCollecting;
+    pop();
 
     return string;
 }

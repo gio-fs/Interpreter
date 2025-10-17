@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 #include <inttypes.h>
 #include "common.h"
 #include "memory.h"
@@ -120,6 +121,7 @@ static Value peek(int distance) {
 }
 
 static bool isBuiltInAndSet(Value value, ObjClass** klass) {
+    if (value.type != VAL_OBJ) return false;
     switch (AS_OBJ(value)->type) {
         case OBJ_ARRAY:
             *klass = AS_ARRAY(value)->klass;
@@ -372,6 +374,7 @@ static bool invoke(ObjString* name, int argc) {
     // ObjClass* nativeClass = NULL;
 
     ObjInstance* instance = AS_INSTANCE(receiver);
+    // assert(instance == NULL);
     return invokeFromClass(instance->klass, name, argc);
 
 }
@@ -476,10 +479,8 @@ static void concatenate() {
     bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjString* b = valueToString(pop());
-    vm.isCollecting = true;
     ObjString* a = valueToString(pop());
 
-    vm.isCollecting = true;
     int length = a->length + b->length;
     char* newString = ALLOCATE(char, length + 1);
 
@@ -509,7 +510,44 @@ static bool isIterable(Value value) {
     } else return false;
 }
 
+#ifdef DEBUG_LOG_GC
+// In your VM where you do method lookup (probably in OP_GET_PROPERTY or similar)
+void debugMethodLookup(ObjClass* klass, ObjString* name) {
+    fprintf(stderr, "\n[DEBUG] Method lookup: class=%p name=%p (%s)\n",
+            (void*)klass, (void*)name, name->chars);
+    fprintf(stderr, "[DEBUG] Class name: %p (%s)\n",
+            (void*)klass->name, klass->name->chars);
+    fprintf(stderr, "[DEBUG] Methods table: entries=%p cap=%d count=%d\n",
+            (void*)klass->methods.entries,
+            klass->methods.capacity,
+            klass->methods.count);
 
+    // Check if entries pointer is in valid memory
+    bool entriesInNursery = (void*)klass->methods.entries >= (void*)heap.nursery.start &&
+                           (void*)klass->methods.entries < (void*)(heap.nursery.start + NURSERY_SIZE);
+    fprintf(stderr, "[DEBUG] Entries in nursery: %d (BAD if true after GC!)\n", entriesInNursery);
+
+    // Scan all entries
+    for (int i = 0; i < klass->methods.capacity; i++) {
+        Entry* entry = &klass->methods.entries[i];
+        if (entry->key != NULL) {
+            bool keyInNursery = (void*)entry->key >= (void*)heap.nursery.start &&
+                               (void*)entry->key < (void*)(heap.nursery.start + NURSERY_SIZE);
+            fprintf(stderr, "[DEBUG]   Entry[%d]: key=%p (%s) inNursery=%d valType=%d\n",
+                    i, (void*)entry->key, entry->key->chars, keyInNursery, entry->value.type);
+
+            if (IS_OBJ(entry->value)) {
+                Obj* valObj = AS_OBJ(entry->value);
+                bool valInNursery = (void*)valObj >= (void*)heap.nursery.start &&
+                                   (void*)valObj < (void*)(heap.nursery.start + NURSERY_SIZE);
+                fprintf(stderr, "[DEBUG]        val=%p inNursery=%d type=%s\n",
+                        (void*)valObj, valInNursery, objTypeName(valObj->type));
+            }
+        }
+    }
+    fprintf(stderr, "\n");
+}
+#endif
 
 static Value array_AddNative(int argCount, Value* args) {
     if (!IS_ARRAY(args[-1])) {
@@ -523,6 +561,7 @@ static Value array_AddNative(int argCount, Value* args) {
 
     ObjArray* arr = AS_ARRAY(args[-1]);
     appendArray(arr, args[0]);
+    // printf("Appended to array\n");
     return OBJ_VAL(arr);
 }
 
@@ -582,6 +621,7 @@ static Value dict_AddNative(int argCount, Value* args) {
         runtimeError("Dict.add() expects two arguments: key, value");
         return NIL_VAL;
     }
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
 
     ObjDictionary* dict = AS_MAP(args[-1]);
@@ -600,7 +640,7 @@ static Value dict_AddNative(int argCount, Value* args) {
     Entry entry = {.key = key, .value = args[1]};
     writeEntryList(&dict->entries, entry);
 
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
     return OBJ_VAL(dict);
 }
 
@@ -614,12 +654,13 @@ static Value dict_SetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
 
     tableSet(&dict->map, key, args[1]);
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
     return args[1];
 }
 
@@ -628,10 +669,12 @@ static Value dict_GetNative(int argCount, Value* args) {
         runtimeError("Value is not a map");
         return NIL_VAL;
     }
+
     if (argCount != 1) {
         runtimeError("Dict.get() expects one argument: key");
         return NIL_VAL;
     }
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
@@ -642,7 +685,7 @@ static Value dict_GetNative(int argCount, Value* args) {
         return NUMBER_VAL(0);
     }
 
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
     return value;
 }
 
@@ -655,6 +698,7 @@ static Value dict_RemoveNative(int argCount, Value* args) {
         runtimeError("Dict.remove() expects one argument: key");
         return NIL_VAL;
     }
+    bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
     ObjDictionary* dict = AS_MAP(args[-1]);
     ObjString* key = valueToString(args[0]);
@@ -664,11 +708,12 @@ static Value dict_RemoveNative(int argCount, Value* args) {
         return NUMBER_VAL(0);
     }
 
-    vm.isCollecting = false;
+    vm.isCollecting = wasCollecting;
     return NIL_VAL;
 }
 
 void initVM() {
+    initGenHeap();
     vm.stack.count = 0;
     vm.stack.capacity = STACK_INIT_CAPACITY;
     vm.stack.values = ALLOCATE(Value, vm.stack.capacity);
@@ -695,16 +740,16 @@ void initVM() {
     vm.initString = copyString("init", 4);
 
     defineNative("clock", clockNative);
-    ObjClass* array = defineBuiltinClass(vm.array_NativeString);
-    defineBuiltinMethod(array, "add", array_AddNative);
-    defineBuiltinMethod(array, "set", array_SetNative);
-    defineBuiltinMethod(array, "get", array_GetNative);
-    defineBuiltinMethod(array, "pop", array_PopNative);
-    ObjClass* dict = defineBuiltinClass(vm.dict_NativeString);
-    defineBuiltinMethod(dict, "add", dict_AddNative);
-    defineBuiltinMethod(dict, "set", dict_SetNative);
-    defineBuiltinMethod(dict, "get", dict_GetNative);
-    defineBuiltinMethod(dict, "remove", dict_RemoveNative);
+    vm.arrayClass = defineBuiltinClass(vm.array_NativeString);
+    defineBuiltinMethod(vm.arrayClass, "add", array_AddNative);
+    defineBuiltinMethod(vm.arrayClass, "set", array_SetNative);
+    defineBuiltinMethod(vm.arrayClass, "get", array_GetNative);
+    defineBuiltinMethod(vm.arrayClass, "pop", array_PopNative);
+    vm.dictClass = defineBuiltinClass(vm.dict_NativeString);
+    defineBuiltinMethod(vm.dictClass, "add", dict_AddNative);
+    defineBuiltinMethod(vm.dictClass, "set", dict_SetNative);
+    defineBuiltinMethod(vm.dictClass, "get", dict_GetNative);
+    defineBuiltinMethod(vm.dictClass, "remove", dict_RemoveNative);
 }
 
 void freeVM() {
@@ -729,7 +774,7 @@ void freeVM() {
     vm.array_NativeString = NULL;
     vm.dict_NativeString = NULL;
 
-    freeObjects();
+    // freeObjects();
 }
 
 static InterpretResult run() {
@@ -983,23 +1028,26 @@ static InterpretResult run() {
                 push(OBJ_VAL(dict));
 
                 for (int i = count - 1; i > 0; i -= 2) {
+                    bool wasCollecting = vm.isCollecting;
                     vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
-                    vm.isCollecting = false;
                     Value elem = peek(i - 1);
 
-                    Entry curr = {.key = key, .value = elem};
-                    tableSet(&dict->map, key, elem);
-                    writeEntryList(&dict->entries, curr);
-                }
+                    if (tableSet(&dict->map, key, elem)) {
+                        Entry curr = {.key = key, .value = elem};
+                        writeEntryList(&dict->entries, curr);
+                    }
 
-                pop();
+                    vm.isCollecting = wasCollecting;
+                }
 
                 for (int i = 0; i < count; i++) {
                     pop();
                 }
 
+                pop();
                 push(OBJ_VAL(dict));
+
                 break;
             }
             case OP_MAP_LONG: {
@@ -1009,20 +1057,25 @@ static InterpretResult run() {
 
                 for (int i = count - 1; i > 0; i -= 2) {
                     Value elem = peek(i - 1);
+                    bool wasCollecting = vm.isCollecting;
                     vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
-                    vm.isCollecting = false;
 
-                    Entry curr = {.key = key, .value = elem};
-                    tableSet(&dict->map, key, elem);
-                    writeEntryList(&dict->entries, curr);
+                    if (tableSet(&dict->map, key, elem)) {
+                        Entry curr = {.key = key, .value = elem};
+                        writeEntryList(&dict->entries, curr);
+                    }
+
+                    vm.isCollecting = wasCollecting;
                 }
+
+                pop();
 
                 for (int i = 0; i < count; i++) {
                     pop();
                 }
 
-                pop();
+
                 push(OBJ_VAL(dict));
                 break;
             }
@@ -1734,6 +1787,7 @@ static InterpretResult run() {
                         break;
                     }
 
+                    // debugMethodLookup(instance->klass, name);
                     if (!bindMethod(instance->klass, name)) {
                         return INTERPRET_RUNTIME_ERROR;
                     }
@@ -1743,8 +1797,10 @@ static InterpretResult run() {
 
                 ObjClass* nativeClass = NULL;
                 if (isBuiltInAndSet(peek(0), &nativeClass)) {
-
-                    if (!bindNativeMethod(nativeClass, name)) {
+#ifdef DEBUG_LOG_GC
+                    debugMethodLookup(nativeClass, name);
+#endif
+                if (!bindNativeMethod(nativeClass, name)) {
                         return INTERPRET_RUNTIME_ERROR;
                     }
 
@@ -1798,8 +1854,12 @@ static InterpretResult run() {
             case OP_INVOKE: {
                 ObjString* method = READ_STRING();
                 int argc = READ_BYTE();
+                // printValue(peek(argc));
                 ObjClass* nativeClass = NULL;
                 if (isBuiltInAndSet(peek(argc), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                    // debugMethodLookup(nativeClass, method);
+#endif
                     if (!invokeFromNative(nativeClass, method, argc)) {
                         return INTERPRET_RUNTIME_ERROR;
                     }

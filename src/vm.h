@@ -34,6 +34,8 @@ typedef struct {
     ObjString* array_NativeString;
     ObjString* dict_NativeString;
     ObjString* initString;
+    ObjClass* arrayClass;
+    ObjClass* dictClass;
     bool canSetConstProp;
 
     unsigned long long bytesAllocated;

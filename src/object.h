@@ -22,9 +22,11 @@ typedef enum {
 struct Obj {
     ObjType type;
     bool isMarked;
-    struct Obj* next; //singly-linked list to keep track of the objs for the GC
+    int age;
+    size_t size;
+    // struct Obj* next; //singly-linked list to keep track of the objs for the GC
+    struct Obj* forwarded;
 };
-
 struct ObjString {
     Obj obj;
     int length;

@@ -7,7 +7,7 @@
 
 
 // #define DEBUG_TRACE_EXECUTION
-// #define DEBUG_LOG_GC
+#define DEBUG_LOG_GC
 #define DEBUG_PRINT_CODE
 // #define DEUBUG_STRESS_GC
 
