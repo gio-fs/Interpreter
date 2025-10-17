@@ -38,7 +38,7 @@ extern GenerationalHeap heap;
 #define FREE_ARRAY(type, ptr, oldCount) reallocate(ptr, sizeof(type) * (oldCount), 0)
 
 #define GC_HEAP_GROW_FACTOR 2
-#define HEAP_SIZE 1024 * 1024 * 32
+#define HEAP_SIZE 1024 * 1024 * 2
 #define NURSERY_SIZE HEAP_SIZE / 4
 #define ALIGNMENT 8
 #define PROMOTING_AGE 2

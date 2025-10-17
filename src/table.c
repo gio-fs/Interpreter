@@ -152,7 +152,6 @@ void tableRemoveWhite (Table* table) {
 }
 
 void initEntryList(EntryList* arr) {
-
     arr->capacity = 0;
     arr->count = 0;
     arr->entries = NULL;
@@ -171,7 +170,6 @@ void writeEntryList(EntryList* arr,  Entry value) {
 
 
 void freeEntryList(EntryList* arr) {
-
     FREE_ARRAY(uint8_t, arr->entries, arr->capacity);
     initEntryList(arr);
 }

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "clox_compiler.h"
 #include "memory.h"
 #include "common.h"
@@ -17,6 +18,12 @@
 #define IS_IN_RESERVED(obj) \
                 ((uint8_t*)obj >= heap.nursery.reserved \
                             && (uint8_t*)obj < heap.nursery.reserved + heap.nursery.reservedBytesAllocated)
+#define IS_IN_AGING(obj) \
+                ((uint8_t*)obj >= heap.aging.start \
+                            && (uint8_t*)obj < heap.aging.start + heap.aging.bytesAllocated)
+#define IS_IN_OLD(obj) \
+                ((uint8_t*)obj >= heap.oldGen.start \
+                            && (uint8_t*)obj < heap.oldGen.start + heap.oldGen.bytesAllocated)
 
 GenerationalHeap heap;
 
@@ -65,106 +72,106 @@ static void updateFields(Value* value, ptrdiff_t diff, Heap* heap) {
 
     if (value->type != VAL_OBJ) return;
     Obj* obj = AS_OBJ(*value);
-
+    obj->forwarded = obj;
     switch (obj->type) {
         case OBJ_UPVALUE: {
-            ObjUpvalue* upvalue = (ObjUpvalue*)obj;
-            ADJUST_INTERNAL_VAL(&upvalue->closed);
-            ADJUST_INTERNAL_REF(upvalue->next);
+            ADJUST_INTERNAL_VAL(&((ObjUpvalue*)obj)->closed);
+            ADJUST_INTERNAL_REF(((ObjUpvalue*)obj)->next);
             break;
         }
         case OBJ_FUNCTION: {
             ObjFunction* func = (ObjFunction*)obj;
-            ADJUST_INTERNAL_REF(func->name);
+            ADJUST_INTERNAL_REF(((ObjFunction*)obj)->name);
 
             for (int i = 0; i < func->chunk.constants.count; i++) {
-                ADJUST_INTERNAL_VAL(&func->chunk.constants.values[i]);
+                ADJUST_INTERNAL_VAL(&((ObjFunction*)obj)->chunk.constants.values[i]);
             }
 
             break;
         }
         case OBJ_CLOSURE: {
             ObjClosure* closure = (ObjClosure*)obj;
-            ADJUST_INTERNAL_REF(closure->function);
-            ObjFunction* func = closure->function;
+            ADJUST_INTERNAL_REF(((ObjClosure*)obj)->function);
+            ADJUST_INTERNAL_REF(((ObjClosure*)obj)->function->name);
 
-            if (func->name != NULL) {
-                ADJUST_INTERNAL_REF(func->name);
+            for (int i = 0; i < ((ObjClosure*)obj)->function->chunk.constants.count; i++) {
+                ADJUST_INTERNAL_VAL(&((ObjClosure*)obj)->function->chunk.constants.values[i]);
             }
 
-            for (int i = 0; i < func->chunk.constants.count; i++) {
-                ADJUST_INTERNAL_VAL(&func->chunk.constants.values[i]);
-            }
-
-            for (int j = 0; j < closure->upvalueCount; j++) {
-                if (closure->upvalues[j] != NULL) {
-                    ADJUST_INTERNAL_REF(closure->upvalues[j]);
+            for (int j = 0; j < ((ObjClosure*)obj)->upvalueCount; j++) {
+                if (((ObjClosure*)obj)->upvalues[j] != NULL) {
+                    ADJUST_INTERNAL_REF(((ObjClosure*)obj)->upvalues[j]);
                 }
             }
             break;
         }
         case OBJ_DICTIONARY: {
             ObjDictionary* dict = (ObjDictionary*)obj;
+            ADJUST_INTERNAL_REF(((ObjDictionary*)obj)->klass);
+
             for (int i = 0; i < dict->map.capacity; i++) {
-                ADJUST_INTERNAL_REF(dict->map.entries[i].key);
-                ADJUST_INTERNAL_VAL(&dict->map.entries[i].value);
+                ADJUST_INTERNAL_REF(((ObjDictionary*)obj)->map.entries[i].key);
+                ADJUST_INTERNAL_VAL(&((ObjDictionary*)obj)->map.entries[i].value);
             }
 
             for (int i = 0; i < dict->entries.capacity; i++) {
-                ADJUST_INTERNAL_REF(dict->entries.entries[i].key);
-                ADJUST_INTERNAL_VAL(&dict->entries.entries[i].value);
+                ADJUST_INTERNAL_REF(((ObjDictionary*)obj)->entries.entries[i].key);
+                ADJUST_INTERNAL_VAL(&((ObjDictionary*)obj)->entries.entries[i].value);
             }
 
-            ADJUST_INTERNAL_REF(dict->klass);
+
             break;
         }
         case OBJ_ARRAY: {
             ObjArray* arr = (ObjArray*)obj;
+             ADJUST_INTERNAL_REF(((ObjArray*)obj)->klass);
 
             for (int i = 0; i < arr->values.count; i++) {
-                ADJUST_INTERNAL_VAL(&arr->values.values[i]);
+                ADJUST_INTERNAL_VAL(&((ObjArray*)obj)->values.values[i]);
             }
 
-            ADJUST_INTERNAL_REF(arr->klass);
             break;
         }
         case OBJ_CLASS: {
             ObjClass* klass = (ObjClass*)obj;
-            ADJUST_INTERNAL_REF(klass->name);
+            ADJUST_INTERNAL_REF(((ObjClass*)obj)->name);
 
             for (int i = 0; i < klass->methods.capacity; i++) {
-                ADJUST_INTERNAL_REF(klass->methods.entries[i].key);
-                ADJUST_INTERNAL_VAL(&klass->methods.entries[i].value);
+                ADJUST_INTERNAL_REF(((ObjClass*)obj)->methods.entries[i].key);
+                ADJUST_INTERNAL_VAL(&((ObjClass*)obj)->methods.entries[i].value);
             }
 
             for (int i = 0; i < klass->fields.capacity; i++) {
-                ADJUST_INTERNAL_REF(klass->fields.entries[i].key);
-                ADJUST_INTERNAL_VAL(&klass->fields.entries[i].value);
+                ADJUST_INTERNAL_REF(((ObjClass*)obj)->fields.entries[i].key);
+                ADJUST_INTERNAL_VAL(&((ObjClass*)obj)->fields.entries[i].value);
             }
             break;
         }
         case OBJ_INSTANCE: {
             ObjInstance* instance = (ObjInstance*)obj;
-            ADJUST_INTERNAL_REF(instance->klass);
+            ADJUST_INTERNAL_REF(((ObjInstance*)obj)->klass);
 
             for (int i = 0; i < instance->fields.capacity; i++) {
-                ADJUST_INTERNAL_REF(instance->fields.entries[i].key);
-                ADJUST_INTERNAL_VAL(&instance->fields.entries[i].value);
+                ADJUST_INTERNAL_REF(((ObjInstance*)obj)->fields.entries[i].key);
+                ADJUST_INTERNAL_VAL(&((ObjInstance*)obj)->fields.entries[i].value);
             }
             break;
         }
         case OBJ_BOUND_METHOD: {
-            ObjBoundMethod* bound = (ObjBoundMethod*)obj;
-            ADJUST_INTERNAL_VAL(&bound->receiver);
-            ADJUST_INTERNAL_REF(bound->method);
+            ADJUST_INTERNAL_VAL(&((ObjBoundMethod*)obj)->receiver);
+            ADJUST_INTERNAL_REF(((ObjBoundMethod*)obj)->method);
             break;
         }
         case OBJ_NATIVE:
         case OBJ_STRING:
         case OBJ_RANGE:
-            // No references to update
+
             break;
     }
+
+    #undef IS_IN_MOVED
+    #undef ADJUST_INTERNAL_REF
+    #undef ADJUST_INTERNAL_VAL
 }
 
 static void promoteObjects() {
@@ -188,12 +195,12 @@ static void promoteObjects() {
     }
 }
 
-static void updateReferences(uint8_t* old, Heap* heap) {
-    ptrdiff_t diff = heap->start - old;
+static void updateReferences(uintptr_t old, Heap* newHeap) {
+    ptrdiff_t diff = ((uintptr_t)newHeap->start) - old;
 
     #define IS_IN_MOVED(obj) \
-                ((uint8_t*)obj >= heap->start \
-                            && (uint8_t*)obj <= heap->start + heap->bytesAllocated)
+                ((uint8_t*)obj >= newHeap->start \
+                            && (uint8_t*)obj <= newHeap->start + newHeap->bytesAllocated)
 
     #define ADJUST_REF(obj) \
         do { \
@@ -220,6 +227,7 @@ static void updateReferences(uint8_t* old, Heap* heap) {
 
     for (int i = 0; i < vm.frameArray.count; i++) {
         ADJUST_REF(vm.frameArray.frames[i].closure);
+        
     }
 
     ObjUpvalue** upval = &vm.openUpvalues; // pointer to upvalue list
@@ -244,12 +252,14 @@ static void updateReferences(uint8_t* old, Heap* heap) {
         Entry* entry = &vm.constGlobals.entries[i];
         ADJUST_REF(entry->key);
         ADJUST_VALUE(&entry->value);
+
     }
 
     for (int i = 0; i < vm.strings.capacity; i++) {
         Entry* entry = &vm.strings.entries[i];
         ADJUST_REF(entry->key);
         ADJUST_VALUE(&entry->value);
+
     }
 
     ADJUST_REF(vm.array_NativeString);
@@ -258,16 +268,23 @@ static void updateReferences(uint8_t* old, Heap* heap) {
     ADJUST_REF(vm.arrayClass);
     ADJUST_REF(vm.dictClass);
 
-    uint8_t* end = heap->start + heap->bytesAllocated;
-    uint8_t* start = heap->start;
+    for (int i = 0; i < heap.worklist.count; i++) {
+        Value* node = &heap.worklist.values[i];
+        ADJUST_VALUE(node);
+    }
+
+    uint8_t* end = newHeap->start + newHeap->bytesAllocated;
+    uint8_t* start = newHeap->start;
 
     while (start < end) {
         Obj* obj = (Obj*)start;
-        updateFields(&OBJ_VAL(obj), diff, heap);
-        obj->forwarded = obj;
+        ADJUST_REF(obj);
         start += obj->size;
     }
 
+    #undef IS_IN_MOVED
+    #undef ADJUST_INTERNAL_REF
+    #undef ADJUST_INTERNAL_VAL
 }
 
 size_t align(size_t size, size_t alignment) {
@@ -279,11 +296,11 @@ void minorCollection();
 void* writeNursery(Nursery* nursery, size_t size) {
     size_t aligned = align(size, ALIGNMENT);
 
-    if (vm.isCollecting) {
-        void* reserved = nursery->reserved + nursery->reservedBytesAllocated;
-        nursery->reservedBytesAllocated += aligned;
-        return reserved;
-    }
+    // if (vm.isCollecting) {
+    //     void* reserved = nursery->reserved + nursery->reservedBytesAllocated;
+    //     nursery->reservedBytesAllocated += aligned;
+    //     return reserved;
+    // }
 
     if (nursery->curr + aligned > nursery->start + NURSERY_SIZE && !vm.isCollecting) {
 #ifdef DEBUG_LOG_GC
@@ -298,7 +315,7 @@ void* writeNursery(Nursery* nursery, size_t size) {
 }
 
 static void growHeap(Heap* heap, size_t newSize) {
-    uint8_t* old = heap->start;
+    uintptr_t old = (uintptr_t)heap->start;
     heap->start = realloc(heap->start, newSize);
 
     if (heap->start == NULL) {
@@ -306,18 +323,18 @@ static void growHeap(Heap* heap, size_t newSize) {
         exit(1);
     }
 
-    // updateReferences(old, heap);
+    updateReferences(old, heap);
     heap->size = newSize;
     printf("Heap grown");
 }
 
 void* writeHeap(Heap* heap, size_t size) {
-    size_t aligned = align(size, ALIGNMENT);
+    size = align(size, ALIGNMENT);
 #ifdef DEBUG_LOG_GC
     fprintf(stderr, "[GC] writeHeap: heap=%p size=%zu aligned=%zu bytesAllocated=%zu capacity=%zu\n",
             (void*)heap->start, size, size, heap->bytesAllocated, heap->size);
 #endif
-    heap->bytesAllocated += aligned;
+    heap->bytesAllocated += size;
     if (heap->bytesAllocated >= heap->size) {
 #ifdef DEBUG_LOG_GC
         fprintf(stderr, "[GC] writeHeap: need grow, bytesAllocated=%zu > size=%zu\n",
@@ -329,7 +346,7 @@ void* writeHeap(Heap* heap, size_t size) {
 #endif
     }
 
-    void* result = heap->start + heap->bytesAllocated - aligned;
+    void* result = heap->start + heap->bytesAllocated - size;
     if (result == NULL) {
         printf("heapAlloc failed");
         exit(1);
@@ -347,9 +364,12 @@ static Obj* copyObject(Obj* obj) {
             (void*)obj, objTypeName(obj->type), obj->size, obj->age, (void*)obj->forwarded);
     if (IS_IN_RESERVED(obj)) fprintf(stderr, "Object is in reserved space");
 #endif
-    if (obj->size == 0 || obj->type > 10 || obj->type < 0) {
-        printf("Error: object size is 0 or type is unknown\n");
-        exit(1);
+
+    if (IS_IN_AGING(obj) || IS_IN_OLD(obj)) {
+#ifdef DEBUG_LOG_GC
+        fprintf(stderr, "[GC] copyObject: is in aging or oldGen %p\n", (void*)obj->forwarded);
+#endif
+        return obj;
     }
 
     if (obj->forwarded != NULL) {
@@ -359,7 +379,6 @@ static Obj* copyObject(Obj* obj) {
         return obj->forwarded;
     }
 
-    obj->age++;
     Obj* newObj = (Obj*)writeHeap(&heap.aging, obj->size);
     obj->forwarded = newObj;
 #ifdef DEBUG_LOG_GC
@@ -367,6 +386,8 @@ static Obj* copyObject(Obj* obj) {
             (void*)newObj, (void*)obj, obj->size);
 #endif
     memcpy(newObj, obj, obj->size);
+    newObj->forwarded = NULL;
+    newObj->age++;
 
 #ifdef DEBUG_LOG_GC
     fprintf(stderr, "[GC] copyObject: enqueued new object %p (type=%s)\n",
@@ -563,11 +584,11 @@ static void copyReferences() {
 #ifdef DEBUG_LOG_GC
     fprintf(stderr, "[GC] copyReferences: worklist.count=%d\n", heap.worklist.count);
 #endif
-    for (int i = heap.worklist.count - 1; i >= 0; i--) {
-        Value* value = &heap.worklist.values[i];
+    for (int i = 0; i < heap.worklist.count; i++) {
+        Value value = heap.worklist.values[i];
 
-        if ((*value).type != VAL_OBJ) continue;
-        scanObjectFields(AS_OBJ(*value));
+        if ((value).type != VAL_OBJ) continue;
+        scanObjectFields(AS_OBJ(value));
     }
     initValueArray(&heap.worklist);
 }
@@ -626,7 +647,7 @@ void minorCollection() {
 
 
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC] Roots: openUpvalues head=%p\n", (void*)vm.openUpvalues);
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC] Roots: openUpvalues head=%p\n", (void*)vm.openUpvalues);
 #endif
     ObjUpvalue** upval = &vm.openUpvalues; // pointer to upvalue list
     while(*upval != NULL) {
@@ -637,7 +658,7 @@ void minorCollection() {
 
 
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC] Roots: queues levels=%d\n", vm.nestingLevel + 1);
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC] Roots: queues levels=%d\n", vm.nestingLevel + 1);
 #endif
     for (int i = 0; i <= vm.nestingLevel; i++) {
         for (int j = 0; j < vm.queueCount[i]; j++) {
@@ -650,17 +671,17 @@ void minorCollection() {
 
     // Globals
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++)  fprintf(stderr, "[GC] Roots: globals\n");
+    for (int i = 0; i < 5000; i++)  fprintf(stderr, "[GC] Roots: globals\n");
 #endif
     copyTable(&vm.globals);
 
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC] Roots: constGlobals\n");
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC] Roots: constGlobals\n");
 #endif
     copyTable(&vm.constGlobals);
 
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC ROOT] Roots: strings\n");
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC ROOT] Roots: strings\n");
 #endif
     copyTable(&vm.strings);
 
@@ -668,19 +689,19 @@ void minorCollection() {
     ObjString* oldArr = vm.array_NativeString;
     vm.array_NativeString = (ObjString*)copyObject((Obj*)vm.array_NativeString);
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++)  fprintf(stderr, "[GC ROOT] Root array_NativeString: old=%p -> new=%p\n", (void*)oldArr, (void*)vm.array_NativeString);
+    for (int i = 0; i < 5000; i++)  fprintf(stderr, "[GC ROOT] Root array_NativeString: old=%p -> new=%p\n", (void*)oldArr, (void*)vm.array_NativeString);
 #endif
 
     ObjString* oldDict = vm.dict_NativeString;
     vm.dict_NativeString = (ObjString*)copyObject((Obj*)vm.dict_NativeString);
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC ROOT] Root dict_NativeString: old=%p -> new=%p\n", (void*)oldDict, (void*)vm.dict_NativeString);
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC ROOT] Root dict_NativeString: old=%p -> new=%p\n", (void*)oldDict, (void*)vm.dict_NativeString);
 #endif
 
     ObjString* oldInit = vm.initString;
     vm.initString = (ObjString*)copyObject((Obj*)vm.initString);
 #ifdef DEBUG_LOG_GC
-    for (int i = 0; i < 50000; i++) fprintf(stderr, "[GC ROOT] Root initString: old=%p -> new=%p\n", (void*)oldInit, (void*)vm.initString);
+    for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC ROOT] Root initString: old=%p -> new=%p\n", (void*)oldInit, (void*)vm.initString);
 #endif
 
     ObjClass* oldArrClass = vm.arrayClass;
@@ -695,13 +716,11 @@ void minorCollection() {
     for (int i = 0; i < 5000; i++) fprintf(stderr, "[GC ROOT] Root dictClass: old=%p -> new=%p\n", (void*)oldDictClass, (void*)vm.dictClass);
 #endif
 
-    // scanReservedNursery();
     scanOldGenerations();
     copyReferences();
     // promoteObjects();
 
     heap.nursery.curr = heap.nursery.start;
-    moveReservedNursery();
 
 #ifdef DEBUG_LOG_GC
     fprintf(stderr, "[GC] Nursery after reset: curr=%p used=0 free=%zu\n",

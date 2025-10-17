@@ -1032,13 +1032,14 @@ static InterpretResult run() {
                     vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
                     Value elem = peek(i - 1);
+                    vm.isCollecting = wasCollecting;
 
                     if (tableSet(&dict->map, key, elem)) {
                         Entry curr = {.key = key, .value = elem};
                         writeEntryList(&dict->entries, curr);
                     }
 
-                    vm.isCollecting = wasCollecting;
+
                 }
 
                 for (int i = 0; i < count; i++) {

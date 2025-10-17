@@ -401,10 +401,13 @@ static void endScope() {
 }
 
 static void popLocalsAbove(int depth) {
+    int popped = 0;
     int i = current->localCount - 1;
     while (i >= 0 && current->locals[i].depth > depth) {
         emitByte(OP_POP);
+        popped++;
         i--;
+        fprintf(stderr, "[popLocalsAbove] popped %d locals\n", popped);
     }
 }
 
@@ -490,13 +493,13 @@ static void literal(bool canAssign) {
 }
 
 static void string(bool canAssign) {
-    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
-                                        parser.previous.length - 2)));
+
+    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1, parser.previous.length - 2)));
 }
 
 static void interp(bool canAssign) {
-    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
-                                        parser.previous.length - 1)));
+
+    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1, parser.previous.length - 1)));
 
     do {
         consume(TOKEN_STRING_INTERP_START, "Expect '${'");
