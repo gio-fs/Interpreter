@@ -19,7 +19,7 @@ static bool isAtEnd() {
     return *scanner.current == '\0';
 }
 
-static Token makeToken(TokenType type) {
+static Token makeToken(TokenTypes type) {
     Token token;
     token.type = type;
     token.start = scanner.start;
@@ -138,7 +138,7 @@ static Token number() {
     return makeToken(TOKEN_NUMBER);
 }
 
-static TokenType checkKeyword(int start, int charLeft, const char* keyChar, TokenType type) {
+static TokenTypes checkKeyword(int start, int charLeft, const char* keyChar, TokenTypes type) {
 
     if(scanner.current - scanner.start == start + charLeft && memcmp(scanner.start + start, keyChar, charLeft) == 0) {
         return type;
@@ -150,7 +150,7 @@ static TokenType checkKeyword(int start, int charLeft, const char* keyChar, Toke
 
 Token scanToken();
 
-static TokenType identifierType() {
+static TokenTypes identifierType() {
     switch (scanner.start[0]) {
         case 'a': return checkKeyword(1, 2, "nd", TOKEN_AND);
         case 'b': return checkKeyword(1, 4, "reak", TOKEN_BREAK);

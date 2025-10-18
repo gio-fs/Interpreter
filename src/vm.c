@@ -604,12 +604,12 @@ static Value array_PopNative(int argCount, Value* args) {
         runtimeError("Object is not an array");
         return NIL_VAL;
     }
-    if (argCount != 1) {
+    if (argCount != 0) {
         runtimeError("Array.pop() doesn't expect arguments");
         return NIL_VAL;
     }
 
-    return arrayPop(AS_ARRAY(args[0]));
+    return arrayPop(AS_ARRAY(args[-1]));
 }
 
 static Value dict_AddNative(int argCount, Value* args) {

@@ -2,29 +2,41 @@
 #define clox_memory_h
 #include "common.h"
 #include "object.h"
+
+typedef enum {
+    TYPE_AGING,
+    TYPE_OLDGEN
+} HeapType;
 typedef struct {
     uint8_t* start;
     size_t size;
     uint8_t* curr;
-    uint8_t* reserved;
-    size_t reservedSize;
-    size_t reservedBytesAllocated;
 } Nursery;
 
 typedef struct {
     uint8_t* start;
     size_t size;
     size_t bytesAllocated;
+    HeapType type;
 } Heap;
 
 typedef struct {
+    uint8_t* baseAddr;
+    size_t reservedSize;
+
+    size_t nurseryOffset;
     Nursery nursery;
     ValueArray worklist;
+
+    size_t agingOffset;
     Heap aging;
+
+    size_t oldGenOffset;
+    size_t oldGenCommit;
     Heap oldGen;
 } GenerationalHeap;
 
-extern GenerationalHeap heap;
+extern GenerationalHeap vHeap;
 
 #define FRAMES_INIT_CAPACITY 64
 #define STACK_INIT_CAPACITY (FRAMES_INIT_CAPACITY * UINT8_COUNT)
@@ -37,9 +49,18 @@ extern GenerationalHeap heap;
 #define FREE(objType, ptr) reallocate(ptr, sizeof(objType), 0)
 #define FREE_ARRAY(type, ptr, oldCount) reallocate(ptr, sizeof(type) * (oldCount), 0)
 
-#define GC_HEAP_GROW_FACTOR 2
-#define HEAP_SIZE 1024 * 1024 * 2
-#define NURSERY_SIZE HEAP_SIZE / 4
+
+#define KB(x) ((size_t)(x) * 1024)
+#define MB(x) ((size_t)(x) * 1024 * 1024)
+#define GB(x) ((size_t)(x) * 1024 * 1024 * 1024)
+
+#define PAGE_SIZE 4096
+#define OLDGEN_GROW_FACTOR 2
+#define RESERVED_SIZE GB(1)
+#define AGING_SIZE MB(32)
+#define NURSERY_SIZE ((AGING_SIZE) / 4)
+#define OLDGEN_SIZE RESERVED_SIZE - AGING_SIZE - NURSERY_SIZE
+#define OLDGEN_INITIAL_COMMIT MB(64)
 #define ALIGNMENT 8
 #define PROMOTING_AGE 2
 

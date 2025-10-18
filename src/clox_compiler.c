@@ -181,7 +181,7 @@ static void advance() {
     }
 }
 
-static void consume(TokenType type, const char* message) {
+static void consume(TokenTypes type, const char* message) {
     if (parser.current.type == type) {
         advance();
         return;
@@ -190,11 +190,11 @@ static void consume(TokenType type, const char* message) {
     errorAtCurrent(message);
 }
 
-static bool checkType(TokenType type) {
+static bool checkType(TokenTypes type) {
     return parser.current.type == type;
 }
 
-static bool matchCurrent(TokenType type) {
+static bool matchCurrent(TokenTypes type) {
     if (!checkType(type)) return false;
     advance();
     return true;
@@ -413,7 +413,7 @@ static void popLocalsAbove(int depth) {
 
 
 static void expression();
-ParseRule* getRule(TokenType type);
+ParseRule* getRule(TokenTypes type);
 static void parsePrecedence(Precedence precedence);
 
 
@@ -423,7 +423,7 @@ static void grouping(bool canAssign) {
 }
 
 static void unary(bool canAssign) {
-    TokenType operatorType = parser.previous.type;
+    TokenTypes operatorType = parser.previous.type;
 
     parsePrecedence(PREC_UNARY);
 
@@ -438,7 +438,7 @@ static void unary(bool canAssign) {
 static void binary(bool canAssign) {
 
  // op type
-    TokenType operatorType = parser.previous.type;
+    TokenTypes operatorType = parser.previous.type;
 
  // compile the right op
     ParseRule* rule = getRule(operatorType);
@@ -621,7 +621,7 @@ static void namedVariable(Token name, bool canAssign) {
     }
 
     compoundAssign = matchCurrent(TOKEN_MINUS_EQUAL) || matchCurrent(TOKEN_PLUS_EQUAL);
-    TokenType compoundType;
+    TokenTypes compoundType;
     if (compoundAssign) compoundType = parser.previous.type;
 
     if (_indexingCount == 1) {
@@ -938,7 +938,7 @@ static void super_(bool canAssign) {
 }
 
 
-ParseRule* getRule(TokenType type) {
+ParseRule* getRule(TokenTypes type) {
     return &rules[type];
 }
 

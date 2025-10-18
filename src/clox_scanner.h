@@ -29,10 +29,10 @@ typedef enum {
     NULL_TOKEN,
     TOKEN_EOF
 
-} TokenType;
+} TokenTypes;
 
 typedef struct {
-    TokenType type;
+    TokenTypes type;
     const char* start;
     int length;
     int line;

@@ -9,7 +9,7 @@
 #define ALLOCATE_OBJ(type, objectType) ((type*)allocateObject(sizeof(type), objectType))
 
 Obj* allocateObject(size_t size, ObjType type) {
-    Obj* obj = (Obj*)writeNursery(&heap.nursery, size);
+    Obj* obj = (Obj*)writeNursery(&vHeap.nursery, size);
     // Obj* obj = reallocate(NULL, 0, size);
     obj->type = type;
     obj->isMarked = false;
@@ -64,7 +64,7 @@ bool appendArray(ObjArray* arr, Value value) {
 }
 
 Value arrayPop(ObjArray* arr) {
-    return arr->values.values[arr->values.count--];
+    return arr->values.values[--arr->values.count];
 }
 
 bool arraySet(ObjArray* arr, int index, Value value) {
