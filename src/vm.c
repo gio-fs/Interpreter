@@ -44,7 +44,10 @@ void freeCallFrameArray(CallFrameArray* arr) {
 }
 
 static void growStack() {
+
     if (vm.stack.capacity <= (int)(vm.stackTop - vm.stack.values) || vm.frameArray.capacity <= vm.frameArray.count) {
+        printf("Growing stack...\n");
+    
         int oldStackCapacity = vm.stack.capacity;
         int oldFramesCapacity = vm.frameArray.capacity;
         int stackSize = (int)(vm.stackTop - vm.stack.values);
@@ -523,23 +526,23 @@ void debugMethodLookup(ObjClass* klass, ObjString* name) {
             klass->methods.count);
 
     // Check if entries pointer is in valid memory
-    bool entriesInNursery = (void*)klass->methods.entries >= (void*)heap.nursery.start &&
-                           (void*)klass->methods.entries < (void*)(heap.nursery.start + NURSERY_SIZE);
+    bool entriesInNursery = (void*)klass->methods.entries >= (void*)vHeap.nursery.start &&
+                           (void*)klass->methods.entries < (void*)(vHeap.nursery.start + NURSERY_SIZE);
     fprintf(stderr, "[DEBUG] Entries in nursery: %d (BAD if true after GC!)\n", entriesInNursery);
 
     // Scan all entries
     for (int i = 0; i < klass->methods.capacity; i++) {
         Entry* entry = &klass->methods.entries[i];
         if (entry->key != NULL) {
-            bool keyInNursery = (void*)entry->key >= (void*)heap.nursery.start &&
-                               (void*)entry->key < (void*)(heap.nursery.start + NURSERY_SIZE);
+            bool keyInNursery = (void*)entry->key >= (void*)vHeap.nursery.start &&
+                               (void*)entry->key < (void*)(vHeap.nursery.start + NURSERY_SIZE);
             fprintf(stderr, "[DEBUG]   Entry[%d]: key=%p (%s) inNursery=%d valType=%d\n",
                     i, (void*)entry->key, entry->key->chars, keyInNursery, entry->value.type);
 
             if (IS_OBJ(entry->value)) {
                 Obj* valObj = AS_OBJ(entry->value);
-                bool valInNursery = (void*)valObj >= (void*)heap.nursery.start &&
-                                   (void*)valObj < (void*)(heap.nursery.start + NURSERY_SIZE);
+                bool valInNursery = (void*)valObj >= (void*)vHeap.nursery.start &&
+                                   (void*)valObj < (void*)(vHeap.nursery.start + NURSERY_SIZE);
                 fprintf(stderr, "[DEBUG]        val=%p inNursery=%d type=%s\n",
                         (void*)valObj, valInNursery, objTypeName(valObj->type));
             }

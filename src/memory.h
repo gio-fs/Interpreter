@@ -20,6 +20,7 @@ typedef struct {
     HeapType type;
 } Heap;
 
+
 typedef struct {
     uint8_t* baseAddr;
     size_t reservedSize;
@@ -30,10 +31,12 @@ typedef struct {
 
     size_t agingOffset;
     Heap aging;
+    Heap semiSpace;
 
     size_t oldGenOffset;
     size_t oldGenCommit;
     Heap oldGen;
+
 } GenerationalHeap;
 
 extern GenerationalHeap vHeap;
@@ -56,10 +59,10 @@ extern GenerationalHeap vHeap;
 
 #define PAGE_SIZE 4096
 #define OLDGEN_GROW_FACTOR 2
-#define RESERVED_SIZE GB(1)
-#define AGING_SIZE MB(32)
+#define RESERVED_SIZE MB(1000)
+#define AGING_SIZE MB(8)
 #define NURSERY_SIZE ((AGING_SIZE) / 4)
-#define OLDGEN_SIZE RESERVED_SIZE - AGING_SIZE - NURSERY_SIZE
+#define OLDGEN_SIZE RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE
 #define OLDGEN_INITIAL_COMMIT MB(64)
 #define ALIGNMENT 8
 #define PROMOTING_AGE 2

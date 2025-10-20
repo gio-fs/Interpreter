@@ -26,6 +26,7 @@ struct Obj {
     size_t size;
     // struct Obj* next; //singly-linked list to keep track of the objs for the GC
     struct Obj* forwarded;
+    bool isProcessed;
 };
 struct ObjString {
     Obj obj;

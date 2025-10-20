@@ -16,6 +16,7 @@ Obj* allocateObject(size_t size, ObjType type) {
     obj->age = 0;
     obj->size = align(size, ALIGNMENT);
     obj->forwarded = NULL;
+    obj->isProcessed = false;
 
     return obj;
 }
