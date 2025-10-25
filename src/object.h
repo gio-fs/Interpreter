@@ -22,11 +22,10 @@ typedef enum {
 struct Obj {
     ObjType type;
     bool isMarked;
+    bool isDirty;
     int age;
     size_t size;
-    // struct Obj* next; //singly-linked list to keep track of the objs for the GC
     struct Obj* forwarded;
-    bool isProcessed;
 };
 struct ObjString {
     Obj obj;
@@ -78,6 +77,7 @@ typedef struct {
     Value receiver;
     ObjClosure* method;
 } ObjBoundMethod;
+
 typedef struct {
     Obj obj;
     ObjClass* klass;

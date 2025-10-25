@@ -1,0 +1,262 @@
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        }
+
+        create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}
+{
+    class Factory {
+        init() {
+            this.products = [];
+            this.registry = {};
+        } create(id) {
+            var product = {};
+            product.add("id", id);
+            product.add("data", []);
+            for i in [1..200] { product.get("data").add(i); }
+            this.products.add(product);
+            this.registry.add("prod" + id, product);
+            return product;
+        }
+    }
+
+    var start = clock();
+    var factories = [];
+    for f in [1..2000] {
+        var factory = Factory();
+        for p in [1..200] {
+            factory.create(p);
+        }
+        factories.add(factory);
+    }
+    var total = 0;
+    for factory in factories {
+        for product in factory.products {
+            for val in product.get("data") {
+                total = total + val;
+            }
+        }
+    }
+
+    var end = clock();
+    print "Factory pattern: ${end-start}s, sum: ${total}";
+}

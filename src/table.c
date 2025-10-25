@@ -72,7 +72,7 @@ static void adjustCapacity(Table* table, int capacity) {
 
 bool tableSet(Table* table, ObjString* key, Value value) {
 
-    if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
+    if (table->count + 1 > (table->capacity) * TABLE_MAX_LOAD) {
         int capacity = GROW_CAPACITY(table->capacity);
         adjustCapacity(table, capacity);
     }
@@ -124,7 +124,7 @@ ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t
 
     if (table->count == 0) return NULL;
 
-    uint32_t index = hash % table->capacity;
+    uint32_t index = hash & (table->capacity - 1);
 
     for(;;) {
 
@@ -138,12 +138,12 @@ ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t
             return entry->key;
         }
 
-        index = (index + 1) % table->capacity;
+        index = (index + 1) & (table->capacity - 1);
     }
 }
 
 void tableRemoveWhite (Table* table) {
-    for (int i = 0; i < table->capacity; i++) {
+    for (int i = 0; i <= table->capacity; i++) {
         Entry* entry = &table->entries[i];
         if (entry->key != NULL && !entry->key->obj.isMarked) {
             tableDelete(table, entry->key);

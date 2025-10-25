@@ -14,9 +14,9 @@ Obj* allocateObject(size_t size, ObjType type) {
     obj->type = type;
     obj->isMarked = false;
     obj->age = 0;
+    obj->isDirty = false;
     obj->size = align(size, ALIGNMENT);
     obj->forwarded = NULL;
-    obj->isProcessed = false;
 
     return obj;
 }
@@ -61,19 +61,27 @@ bool appendArray(ObjArray* arr, Value value) {
     push(OBJ_VAL(arr));
     writeValueArray(&arr->values, value);
     pop();
+
+    markDirty((Obj*)arr);
     return true;
 }
 
 Value arrayPop(ObjArray* arr) {
+    if (arr->values.count == 0) {
+        return NUMBER_VAL(0);
+    }
+
+    markDirty((Obj*)arr);
     return arr->values.values[--arr->values.count];
 }
 
 bool arraySet(ObjArray* arr, int index, Value value) {
-    if ( index < 0 || index >= arr->values.count || value.type != arr->type) {
+    if (index < 0 || index >= arr->values.count || value.type != arr->type) {
         return false;
     }
 
     arr->values.values[index] = value;
+    markDirty((Obj*)arr);
     return true;
 }
 

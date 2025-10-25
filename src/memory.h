@@ -20,6 +20,17 @@ typedef struct {
     HeapType type;
 } Heap;
 
+typedef struct {
+    Obj** objects;
+    int count;
+    int capacity;
+} DirtyObjects;
+
+typedef struct {
+    Heap from;
+    Heap to;
+    DirtyObjects dirty;
+} SemiSpace;
 
 typedef struct {
     uint8_t* baseAddr;
@@ -30,12 +41,11 @@ typedef struct {
     ValueArray worklist;
 
     size_t agingOffset;
-    Heap aging;
-    Heap semiSpace;
+    SemiSpace aging;
 
     size_t oldGenOffset;
     size_t oldGenCommit;
-    Heap oldGen;
+    SemiSpace oldGen;
 
 } GenerationalHeap;
 
@@ -59,23 +69,25 @@ extern GenerationalHeap vHeap;
 
 #define PAGE_SIZE 4096
 #define OLDGEN_GROW_FACTOR 2
-#define RESERVED_SIZE MB(1000)
-#define AGING_SIZE MB(8)
-#define NURSERY_SIZE ((AGING_SIZE) / 4)
-#define OLDGEN_SIZE RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE
-#define OLDGEN_INITIAL_COMMIT MB(64)
+#define RESERVED_SIZE GB(4)
+#define NURSERY_SIZE MB(16)
+#define AGING_SIZE (NURSERY_SIZE * 8)
+#define OLDGEN_SIZE (RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE)
+#define OLDGEN_INITIAL_COMMIT (OLDGEN_SIZE / 16)
 #define ALIGNMENT 8
-#define PROMOTING_AGE 2
+#define PROMOTING_AGE 1
 
 void* reallocate(void* ptr, size_t oldSize, size_t newSize);
 void markObj(Obj* obj);
 void markValue(Value slot);
 void markTable(Table* table);
-void collectGarbage();
+void majorCollection();
 void freeObjects();
 void initGenHeap();
 void* writeNursery(Nursery* nursery, size_t size);
 void* writeHeap(Heap* heap, size_t size);
+void markDirty(Obj* obj);
+void release(void* addr, size_t size);
 size_t align(size_t size, size_t alignment);
 const char* objTypeName(int t);
 #endif

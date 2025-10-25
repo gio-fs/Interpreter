@@ -1,0 +1,57 @@
+{
+    print "\n=== Test 4: Circular References ===";
+
+    class ListNode {
+        init(value) {
+            this.value = value;
+            this.next = nil;
+            this.prev = nil;
+            this.cycle = nil;
+        }
+    }
+
+    var start = clock();
+
+    // Create circular linked lists
+    var lists = [];
+    for listId in [1..5000] {
+        var head = ListNode(listId * 1000);
+        var current = head;
+
+        // Build list with 100 nodes
+        for i in [1..1000] {
+            var node = ListNode(listId * 1000 + i);
+            current.next = node;
+            node.prev = current;
+            current = node;
+        }
+
+        // Create cycle
+        current.next = head;
+        head.prev = current;
+
+        // Add cross-list reference
+        if (listId > 1) {
+            head.cycle = lists.get(listId - 2);
+        }
+
+        lists.add(head);
+    }
+    print "Finished to create circular linked lists";
+
+    // Traverse and break cycles
+    var sum = 0;
+    for head in lists {
+        var current = head;
+        var count = 0;
+
+        for i in [1..501] {
+            sum = sum + current.value;
+            current = current.next;
+            count = count + 1;
+        }
+    }
+
+    var end = clock();
+    print "Circular refs: ${end-start}s, sum: ${sum}";
+}

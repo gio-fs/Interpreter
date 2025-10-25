@@ -1,16 +1,18 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include <signal.h>
 #include "common.h"
 #include "chunk.h"
 #include "clox_debug.h"
 #include "vm.h"
 #include "memory.h"
 
+volatile sig_atomic_t interrupted = 0;
+
 static void repl() {
     char line[65536];
-
-    for(;;) {
+    while (!interrupted) {
         if(!fgets(line, sizeof(line), stdin)) {
             printf("\n");
             break;
@@ -65,20 +67,24 @@ static void runFile(const char* path) {
     if (result == INTERPRET_RUNTIME_ERROR) exit(70);
 }
 
+void clear(int sig) {
+    interrupted = 1;
+}
 
 int main(int argc, const char* argv[]) {
     initVM();
+    signal(SIGINT, clear);
+    signal(SIGTERM, clear);
 
     if (argc == 1) {
         repl();
     } else if (argc == 2) {
-        readFile(argv[1]);
+        runFile(argv[1]);
     } else {
         fprintf(stderr, "Usage: clox [path]\n");
-        exit(64);;
+        exit(64);
     }
 
     freeVM();
-
     return 0;
 }

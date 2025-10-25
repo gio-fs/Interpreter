@@ -1,0 +1,565 @@
+{
+    print "=== Test 1: Deep Object Graph ===";
+    class Node {
+        init(value) {
+            this.value = value;
+            this.left = nil;
+            this.right = nil;
+            this.parent = nil;
+            this.data = {};
+            this.metadata = [];
+        }
+    }
+
+    var start = clock();
+
+    // Build binary tree with 10K nodes
+    var root = Node(0);
+    var nodes = [root];
+
+    for i in [1..10000] {
+        var node = Node(i);
+        var parent = nodes.get((i - 1) / 2);
+        var left = 0;
+        var right = 0;
+
+        if (left == right) {
+            parent.right = node;
+            right = right + 1;
+        } else {
+            parent.left = node;
+            left = left + 1;
+        }
+
+        node.parent = parent;
+
+        // Add metadata to stress GC
+        for j in [1..10] {
+            node.metadata.add({"id": j, "value": i * j});
+        }
+
+        node.data.add("index", i);
+        node.data.add("depth", i / 2);
+        node.data.add("hash", "node_" + i);
+
+        nodes.add(node);
+    }
+
+    // Deep traversal to test old gen scanning
+    var sum = 0;
+    for node in nodes {
+        sum = sum + node.value;
+
+        if (node.left != nil) {
+            sum = sum + node.left.value;
+        }
+
+        if (node.right != nil) {
+            sum = sum + node.right.value;
+        }
+
+        for meta in node.metadata {
+            sum = sum + meta.get("value");
+        }
+    }
+
+    var end = clock();
+    print "Deep graph: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 2: Rapid Allocation and Collection (Young Gen Stress)
+// Tests: Minor GC frequency, nursery evacuation, allocation speed
+// ============================================================================
+{
+    print "\n=== Test 2: Rapid Allocation ===";
+
+    var start = clock();
+    var survivors = [];
+
+    for round in [1..1000] {
+        var batch = [];
+        var count = 0;
+        var k = 1;
+        var j = 1;
+
+        // Create many short-lived objects
+        for i in [1..500] {
+            var temp = {
+                "id": i,
+                "round": round,
+                "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            };
+            count = count + 1;
+
+            // Most die immediately
+            if (count == 50 * k) {
+                batch.add(temp);
+                k = k + 1;
+            }
+        }
+
+        // Few survive
+        if (count == 100 * j) {
+            survivors.add(batch);
+            j = j + 1;
+        }
+    }
+
+    var total = 0;
+    for batch in survivors {
+        for item in batch {
+            total = total + item.get("id");
+        }
+    }
+
+    var end = clock();
+    print "Rapid allocation: ${end-start}s, total: ${total}";
+}
+
+// ============================================================================
+// TEST 3: String Interning Stress
+// Tests: String table, hash collisions, interning performance
+// ============================================================================
+{
+    print "\n=== Test 3: String Interning ===";
+
+    var start = clock();
+    var strings = {};
+    var keys = [];
+
+    // Create many unique strings
+    for i in [1..50000] {
+        var key = "key_" + i + "_suffix_" + (i * 2);
+        keys.add(key);
+
+        var value = "value_" + i + "_data_" + (i * 3);
+        strings.add(key, value);
+    }
+
+    // Access with string concatenation (tests interning)
+    var sum = 0;
+    for i in [1..50000] {
+        var lookupKey = "key_" + i + "_suffix_" + (i * 2);
+        var val = strings.get(lookupKey);
+
+        if (val != nil) {
+            sum = sum + 1;
+        }
+    }
+
+    var end = clock();
+    print "String interning: ${end-start}s, lookups: ${sum}";
+}
+
+// ============================================================================
+// TEST 4: Circular References (GC Correctness Test)
+// Tests: Cycle detection, proper marking, no premature collection
+// ============================================================================
+{
+    print "\n=== Test 4: Circular References ===";
+
+    class ListNode {
+        init(value) {
+            this.value = value;
+            this.next = nil;
+            this.prev = nil;
+            this.cycle = nil;
+        }
+    }
+
+    var start = clock();
+
+    // Create circular linked lists
+    var lists = [];
+    for listId in [1..5000] {
+        var head = ListNode(listId * 1000);
+        var current = head;
+
+        // Build list with 100 nodes
+        for i in [1..1000] {
+            var node = ListNode(listId * 1000 + i);
+            current.next = node;
+            node.prev = current;
+            current = node;
+        }
+
+        // Create cycle
+        current.next = head;
+        head.prev = current;
+
+        // Add cross-list reference
+        if (listId > 1) {
+            head.cycle = lists.get(listId - 2);
+        }
+
+        lists.add(head);
+    }
+
+    // Traverse and break cycles
+    var sum = 0;
+    for head in lists {
+        var current = head;
+        var count = 0;
+
+        for i in [1..1000] {
+            sum = sum + current.value;
+            current = current.next;
+            count = count + 1;
+        }
+    }
+
+    var end = clock();
+    print "Circular refs: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 5: Hash Table Stress (Collision and Resize)
+// Tests: Hash table operations, resizing, collision handling
+// ============================================================================
+{
+    print "\n=== Test 5: Hash Table Stress ===";
+
+    var start = clock();
+
+    var mainTable = {};
+
+    // Fill with many entries to force resizing
+    for i in [1..10000] {
+        var key = "k" + i;
+        var nestedTable = {};
+
+        for j in [1..200] {
+            nestedTable.add("field" + j, i * j);
+        }
+
+        mainTable.add(key, nestedTable);
+    }
+
+    // Random access pattern
+    var sum = 0;
+    for i in [1..10000] {
+        var idx = rand(1, 10000);
+        var key = "k" + idx;
+        var nested = mainTable.get(key);
+
+        if (nested != nil) {
+            var val = nested.get("field10");
+            if (val != nil) {
+                sum = sum + val;
+            }
+        }
+    }
+
+    // Delete half
+    for i in [1..50000] {
+        var key = "k" + (i * 2);
+        mainTable.add(key, nil);
+    }
+
+    var end = clock();
+    print "Hash table stress: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 6: Array Operations (Growth and Compaction)
+// Tests: Array reallocation, copying, memory usage
+// ============================================================================
+{
+    print "\n=== Test 6: Array Operations ===";
+
+    var start = clock();
+
+    var arrays = [];
+
+    // Create many arrays with different sizes
+    for i in [1..1000] {
+        var arr = [];
+
+        // Variable size arrays
+        var size = rand (50, 2000);
+        for j in [1..size] {
+            arr.add({"idx": j, "val": i * j});
+        }
+
+        arrays.add(arr);
+    }
+
+    // Nested iteration (tests GC during array access)
+    var sum = 0;
+    for outerArr in arrays {
+        for item in outerArr {
+            sum = sum + item.get("val");
+
+            // Create temporary arrays
+            var temp = [];
+            for k in [1..100] {
+                temp.add(k);
+            }
+        }
+    }
+
+    var end = clock();
+    print "Array operations: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 9: Mixed Workload (Real-World Simulation)
+// Tests: Everything together, realistic usage patterns
+// ============================================================================
+{
+    print "\n=== Test 9: Mixed Workload ===";
+
+    class DataProcessor {
+        init() {
+            this.cache = {};
+            this.results = [];
+            this.config = {
+                "batchSize": 100,
+                "timeout": 5000,
+                "retries": 3
+            };
+        }
+
+        process(data) {
+            var key = "batch_" + data.get("id");
+
+            if (this.cache.get(key) == nil) {
+                var processed = {};
+                processed.add("id", data.get("id"));
+                processed.add("value", data.get("value") * 2);
+                processed.add("metadata", [1, 2, 3, 4, 5]);
+
+                this.cache.add(key, processed);
+                this.results.add(processed);
+            }
+
+            return this.cache.get(key);
+        }
+
+        getResults() {
+            return this.results;
+        }
+
+        clearCache() {
+            this.cache = {};
+        }
+    }
+
+    var start = clock();
+
+    var processors = [];
+
+    // Create multiple processors
+    for i in [1..100] {
+        processors.add(DataProcessor());
+    }
+
+    // Process data through all processors
+    var sum = 0;
+    for round in [1..200] {
+        for processor in processors {
+            var data = {"id": round, "value": round * 10};
+            var result = processor.process(data);
+            sum = sum + result.get("value");
+
+            //Create temporary objects
+            var temp = [];
+            for k in [1..20] {
+                var o = k;
+                var d = {"key": o, "val": round * o};
+                temp.add(d);
+            }
+
+            // Periodic cache clear (tests old gen cleanup)
+            var r = round - (round / 50) * 50;
+            if (r == 0) {
+                processor.clearCache();
+            }
+        }
+    }
+
+    var end = clock();
+    print "Mixed workload: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 10: Memory Pressure (Stress Old Gen and Compaction)
+// Tests: Major GC, old gen compaction, memory limits
+// ============================================================================
+{
+    print "\n=== Test 10: Memory Pressure ===";
+
+    class LargeObject {
+        init(id) {
+            this.id = id;
+            this.data = [];
+            this.metadata = {};
+            this.refs = [];
+
+            for i in [1..200] {
+                this.data.add(i);
+            }
+
+            for i in [1..50] {
+                this.metadata.add("key" + i, "value" + i);
+            }
+        }
+    }
+
+    var start = clock();
+
+    var persistent = [];
+    var sum = 0;
+
+    // Create long-lived objects
+    for i in [1..2000] {
+        var obj = LargeObject(i);
+
+        // Create many short-lived objects
+        for j in [1..100] {
+            var temp = {"id": j, "parent": i};
+            sum = sum + temp.get("id");
+        }
+
+        // Keep some alive
+        var r = i - (i / 15) * 15;
+        if (r == 0) {
+            persistent.add(obj);
+        }
+    }
+
+    // Create cross-references
+    for i in [1..persistent.length() - 1] {
+        var current = persistent.get(i);
+        var next = persistent.get(i + 1);
+        current.refs.add(next);
+    }
+
+    // Access pattern that promotes objects
+    for obj in persistent {
+        for val in obj.data {
+            sum = sum + val;
+        }
+    }
+
+    var end = clock();
+    print "Memory pressure: ${end-start}s, sum: ${sum}";
+}
+
+// ============================================================================
+// TEST 11: Pathological GC Case (Alternate Live/Dead)
+// Tests: Compaction efficiency, worst-case fragmentation
+// ============================================================================
+{
+    print "\n=== Test 11: Fragmentation Stress ===";
+
+    var start = clock();
+
+    var live = [];
+    var sum = 0;
+
+    // Create alternating live/dead pattern
+    for i in [1..10000] {
+        var obj = {
+            "id": i,
+            "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "metadata": {"key": i, "value": i * 2}
+        };
+
+        // Keep every 5th object (creates fragmentation)
+        var r = i - (i / 5) * 5;
+        if (r == 0) {
+            live.add(obj);
+        }
+
+        sum = sum + obj.get("id");
+    }
+
+    // Force multiple GC cycles
+    for round in [1..100] {
+        var temp = [];
+
+        for i in [1..100] {
+            temp.add({"round": round, "id": i});
+        }
+
+        sum = sum + temp.length();
+    }
+
+    // Access live objects (should be compacted)
+    for obj in live {
+        sum = sum + obj.get("id");
+    }
+
+    var end = clock();
+    print "Fragmentation stress: ${end-start}s, sum: ${sum}, live: ${live.length()}";
+}
+
+// ============================================================================
+// TEST 12: Inter-Generational Pointer Stress
+// Tests: Old->Young pointers, write barriers (if any), promotion correctness
+// ============================================================================
+{
+    print "\n=== Test 12: Inter-Generational Pointers ===";
+
+    class Container {
+        init(id) {
+            this.id = id;
+            this.children = [];
+            this.properties = {};
+        }
+
+        addChild(child) {
+            this.children.add(child);
+        }
+    }
+
+    var start = clock();
+
+    var oldContainers = [];
+
+    // Create old gen objects
+    for i in [1..500] {
+        var container = Container(i);
+
+        for j in [1..10] {
+            container.properties.add("prop" + j, j);
+        }
+
+        oldContainers.add(container);
+
+        // Force objects to old gen by triggering GC
+        for k in [1..200] {
+            var temp = [1, 2, 3, 4, 5];
+        }
+    }
+
+    // Now create young objects and reference from old
+    var sum = 0;
+    for round in [1..100] {
+        for container in oldContainers {
+            // Create young object
+            var youngChild = {
+                "round": round,
+                "parent": container.id,
+                "data": [round, round * 2, round * 3]
+            };
+
+            // Old->Young pointer!
+            container.addChild(youngChild);
+
+            sum = sum + youngChild.get("round");
+        }
+
+        // Trigger minor GC
+        for k in [1..500] {
+            var temp = {"id": k};
+        }
+    }
+
+    var end = clock();
+    print "Inter-gen pointers: ${end-start}s, sum: ${sum}";
+}
+
+print "\n=== All Tests Complete ===";

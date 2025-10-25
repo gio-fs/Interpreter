@@ -20,9 +20,12 @@ typedef struct {
 
 typedef struct {
     CallFrameArray frameArray;
+    CallFrame* reservedFrames;
 
     ValueArray stack;
+    Value* reservedStack;
     Value* stackTop;
+
     Table strings;
     Table globals;
     Table constGlobals;
@@ -36,16 +39,14 @@ typedef struct {
     ObjString* initString;
     ObjClass* arrayClass;
     ObjClass* dictClass;
-    bool canSetConstProp;
 
-    unsigned long long bytesAllocated;
-    unsigned long long nextGC;
-
-    Obj* objects;
+    size_t nextGC;
     int grayCount;
     int grayCapacity;
     Obj** grayStack;
     bool isCollecting;
+    bool isInMinor;
+    bool isInMajor;
 } VM;
 
 typedef enum {

@@ -1,0 +1,27 @@
+
+class Factory {
+    init() {
+        this.products = [];
+        this.registry = {};
+    } create(id) {
+        var product = {};
+        product.add("id", id);
+        product.add("data", []);
+        for i in [1..200] { product.get("data").add(i); }
+        this.products.add(product);
+        this.registry.add("prod" + id, product);
+        return product;
+    }
+}
+
+fn recurse(n) {
+  if (n > 0) {
+    var temp = Factory();
+    recurse(n - 1);
+  }
+}
+
+var start = clock();
+recurse(1000000);
+var end = clock();
+print "Elapsed time: ${end-start}";

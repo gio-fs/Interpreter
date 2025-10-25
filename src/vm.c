@@ -5,6 +5,7 @@
 #include <time.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include "common.h"
 #include "memory.h"
 #include "object.h"
@@ -18,9 +19,6 @@
 VM vm;
 
 
-#include <time.h>
-#include <stdint.h>
-
 double highres_time() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -29,6 +27,14 @@ double highres_time() {
 
 static Value clockNative(int argCount, Value* args) {
     return NUMBER_VAL(highres_time());
+}
+
+static Value randomNative(int argCount, Value* args) {
+    if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1])) {
+        return NUMBER_VAL(0);
+    }
+
+    return NUMBER_VAL(rand() % (int)(AS_NUMBER(args[1])) + (int)(AS_NUMBER(args[0])));
 }
 
 
@@ -45,9 +51,9 @@ void freeCallFrameArray(CallFrameArray* arr) {
 
 static void growStack() {
 
-    if (vm.stack.capacity <= (int)(vm.stackTop - vm.stack.values) || vm.frameArray.capacity <= vm.frameArray.count) {
+    if (vm.frameArray.capacity <= vm.frameArray.count) {
         printf("Growing stack...\n");
-    
+
         int oldStackCapacity = vm.stack.capacity;
         int oldFramesCapacity = vm.frameArray.capacity;
         int stackSize = (int)(vm.stackTop - vm.stack.values);
@@ -75,7 +81,7 @@ static void growStack() {
 void push(Value value) {
     bool wasCollecting = vm.isCollecting;
     vm.isCollecting = true;
-    growStack();
+    // growStack();
     vm.isCollecting = wasCollecting;
     *vm.stackTop = value;
     vm.stackTop++;
@@ -364,8 +370,6 @@ static bool invokeFromNative(ObjClass* klass, ObjString* name, int argc) {
     }
 
     NativeFn native = AS_NATIVE(method);
-    // printValue(peek(argc));
-    // printf("\n");
     Value result = native(argc, vm.stackTop - argc);
     vm.stackTop -= argc + 1;
     push(result);
@@ -374,10 +378,8 @@ static bool invokeFromNative(ObjClass* klass, ObjString* name, int argc) {
 
 static bool invoke(ObjString* name, int argc) {
     Value receiver = peek(argc);
-    // ObjClass* nativeClass = NULL;
 
     ObjInstance* instance = AS_INSTANCE(receiver);
-    // assert(instance == NULL);
     return invokeFromClass(instance->klass, name, argc);
 
 }
@@ -612,7 +614,21 @@ static Value array_PopNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
+
     return arrayPop(AS_ARRAY(args[-1]));
+}
+
+static Value array_LengthNative(int argCount, Value* args) {
+    if (!IS_ARRAY(args[-1])) {
+        runtimeError("Object is not an array");
+        return NIL_VAL;
+    }
+    if (argCount != 0) {
+        runtimeError("Array.length() doesn't expect arguments");
+        return NIL_VAL;
+    }
+
+    return NUMBER_VAL(AS_ARRAY(args[-1])->values.count);
 }
 
 static Value dict_AddNative(int argCount, Value* args) {
@@ -631,18 +647,16 @@ static Value dict_AddNative(int argCount, Value* args) {
     ObjString* key = valueToString(args[0]);
 
     Value value;
-    tableGet(&dict->map, key, &value);
 
     if (!tableSet(&dict->map, key, args[1])) {
-        runtimeError("Entry already exists in dictionary");
-        tableDelete(&dict->map, key);
-        tableSet(&dict->map, key, value);
+        // runtimeError("Entry already exists in dictionary");
         return NIL_VAL;
     }
 
     Entry entry = {.key = key, .value = args[1]};
     writeEntryList(&dict->entries, entry);
 
+    markDirty((Obj*)dict);
     vm.isCollecting = wasCollecting;
     return OBJ_VAL(dict);
 }
@@ -663,6 +677,7 @@ static Value dict_SetNative(int argCount, Value* args) {
     ObjString* key = valueToString(args[0]);
 
     tableSet(&dict->map, key, args[1]);
+    markDirty((Obj*)dict);
     vm.isCollecting = wasCollecting;
     return args[1];
 }
@@ -685,7 +700,7 @@ static Value dict_GetNative(int argCount, Value* args) {
     Value value;
     if (!tableGet(&dict->map, key, &value)) {
         // runtimeError("Key not found");
-        return NUMBER_VAL(0);
+        return NIL_VAL;
     }
 
     vm.isCollecting = wasCollecting;
@@ -711,8 +726,22 @@ static Value dict_RemoveNative(int argCount, Value* args) {
         return NUMBER_VAL(0);
     }
 
+    markDirty((Obj*)dict);
     vm.isCollecting = wasCollecting;
     return NIL_VAL;
+}
+
+static Value dict_LengthNative(int argCount, Value* args) {
+    if (!IS_MAP(args[-1])) {
+        runtimeError("Object is not a dictionary");
+        return NIL_VAL;
+    }
+    if (argCount != 0) {
+        runtimeError("Dict.length() doesn't expect arguments");
+        return NIL_VAL;
+    }
+
+    return NUMBER_VAL(AS_MAP(args[-1])->entries.count);
 }
 
 void initVM() {
@@ -722,10 +751,10 @@ void initVM() {
     vm.stack.values = ALLOCATE(Value, vm.stack.capacity);
     vm.stackTop = vm.stack.values;
     vm.openUpvalues = NULL;
-    vm.objects = NULL;
-    vm.bytesAllocated = 0;
-    vm.nextGC = 1024 * 1024;
+    vm.nextGC = 8 * 1024 * 1024;
     vm.isCollecting = false;
+    vm.isInMajor = false;
+    vm.isInMinor = false;
 
     initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
@@ -743,16 +772,19 @@ void initVM() {
     vm.initString = copyString("init", 4);
 
     defineNative("clock", clockNative);
+    defineNative("rand", randomNative);
     vm.arrayClass = defineBuiltinClass(vm.array_NativeString);
     defineBuiltinMethod(vm.arrayClass, "add", array_AddNative);
     defineBuiltinMethod(vm.arrayClass, "set", array_SetNative);
     defineBuiltinMethod(vm.arrayClass, "get", array_GetNative);
     defineBuiltinMethod(vm.arrayClass, "pop", array_PopNative);
+    defineBuiltinMethod(vm.arrayClass, "length", array_LengthNative);
     vm.dictClass = defineBuiltinClass(vm.dict_NativeString);
     defineBuiltinMethod(vm.dictClass, "add", dict_AddNative);
     defineBuiltinMethod(vm.dictClass, "set", dict_SetNative);
     defineBuiltinMethod(vm.dictClass, "get", dict_GetNative);
     defineBuiltinMethod(vm.dictClass, "remove", dict_RemoveNative);
+    defineBuiltinMethod(vm.dictClass, "length", dict_LengthNative);
 }
 
 void freeVM() {
@@ -776,8 +808,6 @@ void freeVM() {
     vm.initString = NULL;
     vm.array_NativeString = NULL;
     vm.dict_NativeString = NULL;
-
-    // freeObjects();
 }
 
 static InterpretResult run() {
@@ -1030,19 +1060,19 @@ static InterpretResult run() {
                 ObjDictionary* dict = newDictionary();
                 push(OBJ_VAL(dict));
 
-                for (int i = count - 1; i > 0; i -= 2) {
-                    bool wasCollecting = vm.isCollecting;
+
+                for (int i = count; i > 0; i -= 2) {
+                    bool wasCollecting  = vm.isCollecting;
                     vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
                     Value elem = peek(i - 1);
-                    vm.isCollecting = wasCollecting;
 
                     if (tableSet(&dict->map, key, elem)) {
                         Entry curr = {.key = key, .value = elem};
                         writeEntryList(&dict->entries, curr);
                     }
-
-
+                    vm.isCollecting = wasCollecting;
+                    markDirty((Obj*)dict);
                 }
 
                 for (int i = 0; i < count; i++) {
@@ -1051,7 +1081,6 @@ static InterpretResult run() {
 
                 pop();
                 push(OBJ_VAL(dict));
-
                 break;
             }
             case OP_MAP_LONG: {
@@ -1059,11 +1088,12 @@ static InterpretResult run() {
                 ObjDictionary* dict = newDictionary();
                 push(OBJ_VAL(dict));
 
-                for (int i = count - 1; i > 0; i -= 2) {
-                    Value elem = peek(i - 1);
-                    bool wasCollecting = vm.isCollecting;
+
+                for (int i = count; i > 0; i -= 2) {
+                    bool wasCollecting  = vm.isCollecting;
                     vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
+                    Value elem = peek(i - 1);
 
                     if (tableSet(&dict->map, key, elem)) {
                         Entry curr = {.key = key, .value = elem};
@@ -1071,6 +1101,7 @@ static InterpretResult run() {
                     }
 
                     vm.isCollecting = wasCollecting;
+                    markDirty((Obj*)dict);
                 }
 
                 pop();
@@ -1838,6 +1869,7 @@ static InterpretResult run() {
                 }
 
                 tableSet(&instance->fields, fieldName, peek(0));
+                markDirty((Obj*)instance);
 
                 // we remove the instance from the stack
                 // and leave only the property set value
