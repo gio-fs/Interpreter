@@ -156,62 +156,62 @@
 // TEST 4: Circular References (GC Correctness Test)
 // Tests: Cycle detection, proper marking, no premature collection
 // ============================================================================
-{
-    print "\n=== Test 4: Circular References ===";
+// {
+//     print "\n=== Test 4: Circular References ===";
 
-    class ListNode {
-        init(value) {
-            this.value = value;
-            this.next = nil;
-            this.prev = nil;
-            this.cycle = nil;
-        }
-    }
+//     class ListNode {
+//         init(value) {
+//             this.value = value;
+//             this.next = nil;
+//             this.prev = nil;
+//             this.cycle = nil;
+//         }
+//     }
 
-    var start = clock();
+//     var start = clock();
 
-    // Create circular linked lists
-    var lists = [];
-    for listId in [1..5000] {
-        var head = ListNode(listId * 1000);
-        var current = head;
+//     // Create circular linked lists
+//     var lists = [];
+//     for listId in [1..5000] {
+//         var head = ListNode(listId * 1000);
+//         var current = head;
 
-        // Build list with 100 nodes
-        for i in [1..1000] {
-            var node = ListNode(listId * 1000 + i);
-            current.next = node;
-            node.prev = current;
-            current = node;
-        }
+//         // Build list with 100 nodes
+//         for i in [1..1000] {
+//             var node = ListNode(listId * 1000 + i);
+//             current.next = node;
+//             node.prev = current;
+//             current = node;
+//         }
 
-        // Create cycle
-        current.next = head;
-        head.prev = current;
+//         // Create cycle
+//         current.next = head;
+//         head.prev = current;
 
-        // Add cross-list reference
-        if (listId > 1) {
-            head.cycle = lists.get(listId - 2);
-        }
+//         // Add cross-list reference
+//         if (listId > 1) {
+//             head.cycle = lists.get(listId - 2);
+//         }
 
-        lists.add(head);
-    }
+//         lists.add(head);
+//     }
 
-    // Traverse and break cycles
-    var sum = 0;
-    for head in lists {
-        var current = head;
-        var count = 0;
+//     // Traverse and break cycles
+//     var sum = 0;
+//     for head in lists {
+//         var current = head;
+//         var count = 0;
 
-        for i in [1..1000] {
-            sum = sum + current.value;
-            current = current.next;
-            count = count + 1;
-        }
-    }
+//         for i in [1..100] {
+//             sum = sum + current.value;
+//             current = current.next;
+//             count = count + 1;
+//         }
+//     }
 
-    var end = clock();
-    print "Circular refs: ${end-start}s, sum: ${sum}";
-}
+//     var end = clock();
+//     print "Circular refs: ${end-start}s, sum: ${sum}";
+// }
 
 // ============================================================================
 // TEST 5: Hash Table Stress (Collision and Resize)
@@ -236,10 +236,11 @@
         mainTable.add(key, nestedTable);
     }
 
+    print "Finished to fill";
     // Random access pattern
     var sum = 0;
     for i in [1..10000] {
-        var idx = rand(1, 10000);
+        var idx = rand(1, 1000);
         var key = "k" + idx;
         var nested = mainTable.get(key);
 
@@ -277,7 +278,7 @@
         var arr = [];
 
         // Variable size arrays
-        var size = rand (50, 2000);
+        var size = rand (50, 200);
         for j in [1..size] {
             arr.add({"idx": j, "val": i * j});
         }
@@ -307,81 +308,81 @@
 // TEST 9: Mixed Workload (Real-World Simulation)
 // Tests: Everything together, realistic usage patterns
 // ============================================================================
-{
-    print "\n=== Test 9: Mixed Workload ===";
+// {
+//     print "\n=== Test 9: Mixed Workload ===";
 
-    class DataProcessor {
-        init() {
-            this.cache = {};
-            this.results = [];
-            this.config = {
-                "batchSize": 100,
-                "timeout": 5000,
-                "retries": 3
-            };
-        }
+//     class DataProcessor {
+//         init() {
+//             this.cache = {};
+//             this.results = [];
+//             this.config = {
+//                 "batchSize": 100,
+//                 "timeout": 5000,
+//                 "retries": 3
+//             };
+//         }
 
-        process(data) {
-            var key = "batch_" + data.get("id");
+//         process(data) {
+//             var key = "batch_" + data.get("id");
 
-            if (this.cache.get(key) == nil) {
-                var processed = {};
-                processed.add("id", data.get("id"));
-                processed.add("value", data.get("value") * 2);
-                processed.add("metadata", [1, 2, 3, 4, 5]);
+//             if (this.cache.get(key) == nil) {
+//                 var processed = {};
+//                 processed.add("id", data.get("id"));
+//                 processed.add("value", data.get("value") * 2);
+//                 processed.add("metadata", [1, 2, 3, 4, 5]);
 
-                this.cache.add(key, processed);
-                this.results.add(processed);
-            }
+//                 this.cache.add(key, processed);
+//                 this.results.add(processed);
+//             }
 
-            return this.cache.get(key);
-        }
+//             return this.cache.get(key);
+//         }
 
-        getResults() {
-            return this.results;
-        }
+//         getResults() {
+//             return this.results;
+//         }
 
-        clearCache() {
-            this.cache = {};
-        }
-    }
+//         clearCache() {
+//             this.cache = {};
+//         }
+//     }
 
-    var start = clock();
+//     var start = clock();
 
-    var processors = [];
+//     var processors = [];
 
-    // Create multiple processors
-    for i in [1..100] {
-        processors.add(DataProcessor());
-    }
+//     // Create multiple processors
+//     for i in [1..100] {
+//         processors.add(DataProcessor());
+//     }
 
-    // Process data through all processors
-    var sum = 0;
-    for round in [1..200] {
-        for processor in processors {
-            var data = {"id": round, "value": round * 10};
-            var result = processor.process(data);
-            sum = sum + result.get("value");
+//     // Process data through all processors
+//     var sum = 0;
+//     for round in [1..200] {
+//         for processor in processors {
+//             var data = {"id": round, "value": round * 10};
+//             var result = processor.process(data);
+//             sum = sum + result.get("value");
 
-            //Create temporary objects
-            var temp = [];
-            for k in [1..20] {
-                var o = k;
-                var d = {"key": o, "val": round * o};
-                temp.add(d);
-            }
+//             //Create temporary objects
+//             var temp = [];
+//             for k in [1..20] {
+//                 var o = k;
+//                 var d = {"key": o, "val": round * o};
+//                 temp.add(d);
+//             }
 
-            // Periodic cache clear (tests old gen cleanup)
-            var r = round - (round / 50) * 50;
-            if (r == 0) {
-                processor.clearCache();
-            }
-        }
-    }
+//             // Periodic cache clear (tests old gen cleanup)
+//             var r = round - (round / 50) * 50;
+//             if (r == 0) {
+//                 processor.clearCache();
+//             }
+//         }
+//     }
 
-    var end = clock();
-    print "Mixed workload: ${end-start}s, sum: ${sum}";
-}
+//     var end = clock();
+//     print "Mixed workload: ${end-start}s, sum: ${sum}";
+// }
 
 // ============================================================================
 // TEST 10: Memory Pressure (Stress Old Gen and Compaction)

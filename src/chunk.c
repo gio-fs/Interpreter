@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include "chunk.h"
 #include "memory.h"
 #include "vm.h"
@@ -11,12 +12,13 @@ void initChunk(Chunk* chunk) {
     chunk->lineArray.lines = NULL;
     chunk->code = NULL;
 
+
     initValueArray(&chunk->constants);
 
 }
 
 void writeChunk(Chunk* chunk, uint8_t byte, int line) {
-    if (chunk->capacity < chunk->count+1) {
+    if (chunk->capacity < chunk->count + 1) {
             int oldCapacity = chunk->capacity;
             chunk->capacity = GROW_CAPACITY(oldCapacity);
             chunk->code = GROW_ARRAY(uint8_t, chunk->code, oldCapacity, chunk->capacity);

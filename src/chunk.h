@@ -1,5 +1,6 @@
 #ifndef clox_chunk_h
 #define clox_chunk_h
+#include <stdbool.h>
 #include "common.h"
 #include "value.h"
 #include "table.h"
@@ -86,7 +87,15 @@ typedef enum {
     OP_METHOD,
     OP_INVOKE,
     OP_INHERIT,
-    OP_GET_SUPER
+    OP_GET_SUPER,
+    OP_GET_PROPERTY_LONG,
+    OP_SET_PROPERTY_LONG,
+    OP_DEFINE_PROPERTY_LONG,
+    OP_INVOKE_LONG,
+    OP_GET_SUPER_LONG,
+    OP_METHOD_LONG,
+    OP_CLASS_LONG,
+    OP_CLOSURE_LONG
 } OpCode;
 
 
@@ -106,7 +115,6 @@ typedef struct {
     uint8_t* code;
     LineArray lineArray;
     ValueArray constants;
-    Table saved;
 } Chunk;
 
 

@@ -1,57 +1,75 @@
 {
-    print "\n=== Test 4: Circular References ===";
+    print "\n=== Test 9: Mixed Workload ===";
 
-    class ListNode {
-        init(value) {
-            this.value = value;
-            this.next = nil;
-            this.prev = nil;
-            this.cycle = nil;
+    class DataProcessor {
+        init() {
+            this.cache = {};
+            this.results = [];
+            this.config = {
+                "batchSize": 100,
+                "timeout": 5000,
+                "retries": 3
+            };
+        }
+
+        process(data) {
+            var key = "batch_" + data.get("id");
+
+            if (this.cache.get(key) == nil) {
+                var processed = {};
+                processed.add("id", data.get("id"));
+                processed.add("value", data.get("value") * 2);
+                processed.add("metadata", [1, 2, 3, 4, 5]);
+
+                this.cache.add(key, processed);
+                this.results.add(processed);
+            }
+
+            return this.cache.get(key);
+        }
+
+        getResults() {
+            return this.results;
+        }
+
+        clearCache() {
+            this.cache = {};
         }
     }
 
     var start = clock();
 
-    // Create circular linked lists
-    var lists = [];
-    for listId in [1..5000] {
-        var head = ListNode(listId * 1000);
-        var current = head;
+    var processors = [];
 
-        // Build list with 100 nodes
-        for i in [1..1000] {
-            var node = ListNode(listId * 1000 + i);
-            current.next = node;
-            node.prev = current;
-            current = node;
-        }
-
-        // Create cycle
-        current.next = head;
-        head.prev = current;
-
-        // Add cross-list reference
-        if (listId > 1) {
-            head.cycle = lists.get(listId - 2);
-        }
-
-        lists.add(head);
+    // Create multiple processors
+    for i in [1..100] {
+        processors.add(DataProcessor());
     }
-    print "Finished to create circular linked lists";
 
-    // Traverse and break cycles
+    // Process data through all processors
     var sum = 0;
-    for head in lists {
-        var current = head;
-        var count = 0;
+    for round in [1..200] {
+        for processor in processors {
+            var data = {"id": round, "value": round * 10};
+            var result = processor.process(data);
+            sum = sum + result.get("value");
 
-        for i in [1..501] {
-            sum = sum + current.value;
-            current = current.next;
-            count = count + 1;
+            //Create temporary objects
+            var temp = [];
+            for k in [1..20] {
+                var o = k;
+                var d = {"key": o, "val": round * o};
+                temp.add(d);
+            }
+
+            // Periodic cache clear (tests old gen cleanup)
+            var r = round - (round / 50) * 50;
+            if (r == 0) {
+                processor.clearCache();
+            }
         }
     }
 
     var end = clock();
-    print "Circular refs: ${end-start}s, sum: ${sum}";
+    print "Mixed workload: ${end-start}s, sum: ${sum}";
 }

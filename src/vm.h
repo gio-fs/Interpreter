@@ -39,6 +39,7 @@ typedef struct {
     ObjString* initString;
     ObjClass* arrayClass;
     ObjClass* dictClass;
+    bool isLong;
 
     size_t nextGC;
     int grayCount;

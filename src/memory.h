@@ -70,12 +70,12 @@ extern GenerationalHeap vHeap;
 #define PAGE_SIZE 4096
 #define OLDGEN_GROW_FACTOR 2
 #define RESERVED_SIZE GB(4)
-#define NURSERY_SIZE MB(16)
-#define AGING_SIZE (NURSERY_SIZE * 8)
+#define NURSERY_SIZE MB(1)
+#define AGING_SIZE (NURSERY_SIZE * 4)
 #define OLDGEN_SIZE (RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE)
 #define OLDGEN_INITIAL_COMMIT (OLDGEN_SIZE / 16)
 #define ALIGNMENT 8
-#define PROMOTING_AGE 1
+#define PROMOTING_AGE 2
 
 void* reallocate(void* ptr, size_t oldSize, size_t newSize);
 void markObj(Obj* obj);

@@ -79,10 +79,6 @@ static void growStack() {
 }
 
 void push(Value value) {
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
-    // growStack();
-    vm.isCollecting = wasCollecting;
     *vm.stackTop = value;
     vm.stackTop++;
 }
@@ -187,8 +183,11 @@ static bool callValue(Value callee, int argCount) {
             }
             case OBJ_CLASS: {
                 ObjClass* klass = AS_CLASS(callee);
+                push(OBJ_VAL(klass));
+                ObjInstance* instance = newInstance(klass);
+                pop();
+                vm.stackTop[-argCount - 1] = OBJ_VAL(instance);
 
-                vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
                 // ObjString* check = tableFindString(&klass->methods, "init", 4, hashString("init", 4));
                 // printValue(OBJ_VAL(check));
                 // printf("\n");
@@ -253,7 +252,9 @@ ObjUpvalue* captureUpvalue(Value* local) {
         return upvalue;
     }
 
+    push((OBJ_VAL(upvalue)));
     ObjUpvalue* created = newUpvalue(local);
+    pop();
     created->next = upvalue;
 
     // if its null, we add to the head the new upvalue, else
@@ -275,9 +276,6 @@ static void defineMethod(ObjString* name) {
     ObjClass* klass = AS_CLASS(peek(1));
 
     tableSet(&klass->methods, name, method);
-    Value check;
-    tableGet(&klass->methods, name, &check);
-    // printValue(check);
     pop();
 }
 
@@ -286,14 +284,16 @@ static void defineProperty(ObjString* name, bool isConst) {
     // printf("\n");
     // printf("Const: %d\n", isConst);
     ObjClass* klass = AS_CLASS(peek(0));
+
     isConst? tableSet(&klass->fields, name, NUMBER_VAL(-1))
                 : tableSet(&klass->fields, name, NIL_VAL);
+
 }
 
 static void defineNative(const char* name, NativeFn function) {
     push(OBJ_VAL(copyString(name, (int)strlen(name))));
     push(OBJ_VAL(newNative(function, false)));
-    tableSet(&vm.globals, AS_STRING(vm.stack.values[0]), vm.stack.values[1]);
+    tableSet(&vm.globals, AS_STRING(peek(1)), peek(0));
     pop();
     pop();
 }
@@ -325,10 +325,8 @@ static bool bindMethod(ObjClass* klass, ObjString* name) {
         runtimeError("Undefined property");
         return false;
     }
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
+
     ObjBoundMethod* bound = newBoundMethod(peek(0), AS_CLOSURE(method));
-    vm.isCollecting = wasCollecting;
     pop();
 
     push(OBJ_VAL(bound));
@@ -481,10 +479,12 @@ static bool deque(ValueArray* arr, Value* value) {
 
 
 static void concatenate() {
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
-    ObjString* b = valueToString(pop());
-    ObjString* a = valueToString(pop());
+    ObjString* b = valueToString(peek(0));
+    push(OBJ_VAL(b));
+    ObjString* a = valueToString(peek(2));
+    pop();
+    push(OBJ_VAL(b));
+    push(OBJ_VAL(a));
 
     int length = a->length + b->length;
     char* newString = ALLOCATE(char, length + 1);
@@ -493,16 +493,14 @@ static void concatenate() {
     memcpy(newString + a->length, b->chars, b->length);
     newString[length] = '\0';
 
-    // newString is a temp value on heap:
-    // the string object (result) itself is in the heap, and it's chars field points
-    // to the same memory location of temp, thus taking the ownership of the memory.
-    // Now temp doesn't have anymore the responsibility of freeing that memory
-    // and will be handled by the GC when result will be freed. The actual array of characters
-    // never changes place, only the ownership switches between temp and result
-
     ObjString* result = takeString(newString, length);
+
+    pop();
+    pop();
+    pop();  // b
+    pop();  // a
+
     push(OBJ_VAL(result));
-    vm.isCollecting = wasCollecting;
 }
 
 
@@ -640,24 +638,25 @@ static Value dict_AddNative(int argCount, Value* args) {
         runtimeError("Dict.add() expects two arguments: key, value");
         return NIL_VAL;
     }
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
+
 
     ObjDictionary* dict = AS_MAP(args[-1]);
+    push(OBJ_VAL(dict));
     ObjString* key = valueToString(args[0]);
+    pop();
+
 
     Value value;
-
     if (!tableSet(&dict->map, key, args[1])) {
         // runtimeError("Entry already exists in dictionary");
         return NIL_VAL;
     }
 
+
     Entry entry = {.key = key, .value = args[1]};
     writeEntryList(&dict->entries, entry);
 
     markDirty((Obj*)dict);
-    vm.isCollecting = wasCollecting;
     return OBJ_VAL(dict);
 }
 
@@ -671,14 +670,14 @@ static Value dict_SetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
     ObjDictionary* dict = AS_MAP(args[-1]);
+    push(OBJ_VAL(dict));
     ObjString* key = valueToString(args[0]);
+    pop();
 
     tableSet(&dict->map, key, args[1]);
+
     markDirty((Obj*)dict);
-    vm.isCollecting = wasCollecting;
     return args[1];
 }
 
@@ -692,10 +691,11 @@ static Value dict_GetNative(int argCount, Value* args) {
         runtimeError("Dict.get() expects one argument: key");
         return NIL_VAL;
     }
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
+
     ObjDictionary* dict = AS_MAP(args[-1]);
+    push(OBJ_VAL(dict));
     ObjString* key = valueToString(args[0]);
+    pop();
 
     Value value;
     if (!tableGet(&dict->map, key, &value)) {
@@ -703,7 +703,6 @@ static Value dict_GetNative(int argCount, Value* args) {
         return NIL_VAL;
     }
 
-    vm.isCollecting = wasCollecting;
     return value;
 }
 
@@ -716,10 +715,11 @@ static Value dict_RemoveNative(int argCount, Value* args) {
         runtimeError("Dict.remove() expects one argument: key");
         return NIL_VAL;
     }
-    bool wasCollecting = vm.isCollecting;
-    vm.isCollecting = true;
+
     ObjDictionary* dict = AS_MAP(args[-1]);
+    push(OBJ_VAL(dict));
     ObjString* key = valueToString(args[0]);
+    pop();
 
     if (!tableDelete(&dict->map, key)) {
         // runtimeError("Key not found");
@@ -727,7 +727,6 @@ static Value dict_RemoveNative(int argCount, Value* args) {
     }
 
     markDirty((Obj*)dict);
-    vm.isCollecting = wasCollecting;
     return NIL_VAL;
 }
 
@@ -746,15 +745,16 @@ static Value dict_LengthNative(int argCount, Value* args) {
 
 void initVM() {
     initGenHeap();
+    vm.nextGC = 8 * 1024 * 1024;
+    vm.isCollecting = false;
+    vm.isInMajor = false;
+    vm.isInMinor = false;
     vm.stack.count = 0;
     vm.stack.capacity = STACK_INIT_CAPACITY;
     vm.stack.values = ALLOCATE(Value, vm.stack.capacity);
     vm.stackTop = vm.stack.values;
     vm.openUpvalues = NULL;
-    vm.nextGC = 8 * 1024 * 1024;
-    vm.isCollecting = false;
-    vm.isInMajor = false;
-    vm.isInMinor = false;
+
 
     initValueArray(&vm.queue[0]);
     initCallFrameArray(&vm.frameArray);
@@ -817,7 +817,10 @@ static InterpretResult run() {
     #define READ_WORD() (frame->ip += 2, (uint16_t)(frame->ip[-2] << 8 | frame->ip[-1]))
     #define READ_LONG() (frame->ip += 3, (uint32_t)(frame->ip[-3] | frame->ip[-2] << 8 | frame->ip[-1] << 16))
     #define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
+    #define READ_CONSTANT_LONG() (frame->closure->function->chunk.constants.values[READ_LONG()])
+
     #define READ_STRING() AS_STRING(READ_CONSTANT())
+    #define READ_STRING_LONG() AS_STRING(READ_CONSTANT_LONG())
 
     #define BINARY_OP(valueType, op)\
         do {\
@@ -930,20 +933,24 @@ static InterpretResult run() {
             case OP_DEFINE_GLOBAL: {
                 ObjString* name = READ_STRING();
                 Value value = peek(0);
+
                 if (!tableSet(&vm.globals, name, value) || tableGet(&vm.constGlobals, name, &value)) {
                     runtimeError("Variable '%s' is already defined. '%s'", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+
                 pop();
                 break;
             }
             case OP_DEFINE_CONST_GLOBAL: {
                 ObjString* name = READ_STRING();
                 Value value = peek(0);
+
                 if (!tableSet(&vm.constGlobals, name, value) || tableGet(&vm.globals, name, &value)) {
                     runtimeError("Variable '%s' is already defined.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+
                 pop();
                 break;
             }
@@ -983,11 +990,13 @@ static InterpretResult run() {
                     runtimeError("Variable '%s' is const.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+
                 if (tableSet(&vm.globals, name, peek(0))) {
                     tableDelete(&vm.globals, name);
                     runtimeError("Undefined variable '%s'", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+
                 break;
             }
             case OP_SET_GLOBAL_LONG: {
@@ -1060,10 +1069,7 @@ static InterpretResult run() {
                 ObjDictionary* dict = newDictionary();
                 push(OBJ_VAL(dict));
 
-
                 for (int i = count; i > 0; i -= 2) {
-                    bool wasCollecting  = vm.isCollecting;
-                    vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
                     Value elem = peek(i - 1);
 
@@ -1071,7 +1077,7 @@ static InterpretResult run() {
                         Entry curr = {.key = key, .value = elem};
                         writeEntryList(&dict->entries, curr);
                     }
-                    vm.isCollecting = wasCollecting;
+
                     markDirty((Obj*)dict);
                 }
 
@@ -1088,10 +1094,7 @@ static InterpretResult run() {
                 ObjDictionary* dict = newDictionary();
                 push(OBJ_VAL(dict));
 
-
                 for (int i = count; i > 0; i -= 2) {
-                    bool wasCollecting  = vm.isCollecting;
-                    vm.isCollecting = true;
                     ObjString* key = valueToString(peek(i));
                     Value elem = peek(i - 1);
 
@@ -1100,7 +1103,6 @@ static InterpretResult run() {
                         writeEntryList(&dict->entries, curr);
                     }
 
-                    vm.isCollecting = wasCollecting;
                     markDirty((Obj*)dict);
                 }
 
@@ -1144,10 +1146,9 @@ static InterpretResult run() {
                     }
                     case OBJ_DICTIONARY: {
                         ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                        bool wasCollecting = vm.isCollecting;
-                        vm.isCollecting = true;
+                        push(OBJ_VAL(dict));
                         ObjString* key = valueToString(elementIndex);
-                        vm.isCollecting = wasCollecting;
+                        pop();
 
                         if (!tableGet(&dict->map, key, &value)) {
                             runtimeError("Key '%s' not found in dictionary\n", key->chars);
@@ -1190,6 +1191,7 @@ static InterpretResult run() {
                             return INTERPRET_RUNTIME_ERROR;
                         }
 
+                        markDirty((Obj*)arr);
                         break;
                     }
                     case OBJ_DICTIONARY: {
@@ -1206,6 +1208,7 @@ static InterpretResult run() {
                             return INTERPRET_RUNTIME_ERROR;
                         }
 
+                        markDirty((Obj*)dict);
                         break;
                     }
 
@@ -1291,8 +1294,8 @@ static InterpretResult run() {
                     }
                     ObjDictionary* dict = AS_MAP(arr);
                     ObjString* key = AS_STRING(elementIndex);
-                    Value value;
 
+                    Value value;
                     if (tableSet(&dict->map, key, setValue)) {
                         runtimeError("'%s' doesn't exist in this dictionary", key->chars);
                         return INTERPRET_RUNTIME_ERROR;
@@ -1482,7 +1485,9 @@ static InterpretResult run() {
             }
             case OP_SET_UPVALUE: {
                 int index = READ_BYTE();
-                *frame->closure->upvalues[index]->location = peek(0);
+                ObjUpvalue* upval = frame->closure->upvalues[index];
+                *upval->location = peek(0);
+                markDirty((Obj*)upval);
                 break;
             }
             case OP_GET_ELEMENT_UPVALUE: {
@@ -1735,7 +1740,6 @@ static InterpretResult run() {
                             runtimeError("Key '%s' not found in dictionary\n", key->chars);
                             return INTERPRET_RUNTIME_ERROR;
                         }
-
                         break;
                     }
 
@@ -1774,7 +1778,28 @@ static InterpretResult run() {
             }
             case OP_CLOSURE: {
                 ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
+                push(OBJ_VAL(function));
                 ObjClosure* closure = newClosure(function);
+                pop();
+                push(OBJ_VAL(closure));
+
+                for (int i = 0; i < closure->function->upvalueCount; i++) {
+                    bool isLocal = READ_BYTE();
+                    int index = READ_BYTE();
+
+                    if (isLocal) {
+                        closure->upvalues[i] = captureUpvalue(frame->slots + index);
+                    } else {
+                        closure->upvalues[i] = frame->closure->upvalues[index];
+                    }
+                }
+                break;
+            }
+            case OP_CLOSURE_LONG: {
+                ObjFunction* function = AS_FUNCTION(READ_CONSTANT_LONG());
+                push(OBJ_VAL(function));
+                ObjClosure* closure = newClosure(function);
+                pop();
                 push(OBJ_VAL(closure));
 
                 for (int i = 0; i < closure->function->upvalueCount; i++) {
@@ -1805,12 +1830,60 @@ static InterpretResult run() {
                 frame = &vm.frameArray.frames[vm.frameArray.count - 1];
                 break;
             case OP_CLASS: {
-                push(OBJ_VAL(newClass(READ_STRING())));
+                ObjString* name = READ_STRING();
+                push(OBJ_VAL(name));
+                ObjClass* klass = newClass(name);
+                pop();
+                push(OBJ_VAL(klass));
                 break;
             }
-
+            case OP_CLASS_LONG: {
+                ObjString* name = READ_STRING_LONG();
+                push(OBJ_VAL(name));
+                ObjClass* klass = newClass(name);
+                pop();
+                push(OBJ_VAL(klass));
+                break;
+            }
             case OP_GET_PROPERTY: {
                 ObjString* name = READ_STRING();
+
+                if (IS_INSTANCE(peek(0))) {
+                    ObjInstance* instance = AS_INSTANCE(peek(0));
+
+                    Value value;
+                    if (tableGet(&instance->fields, name, &value)) {
+                        pop();
+                        push(value);
+                        break;
+                    }
+
+                    // debugMethodLookup(instance->klass, name);
+                    if (!bindMethod(instance->klass, name)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+
+                ObjClass* nativeClass = NULL;
+                if (isBuiltInAndSet(peek(0), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                    debugMethodLookup(nativeClass, name);
+#endif
+                if (!bindNativeMethod(nativeClass, name)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+
+                runtimeError("Only instances can have properties");
+                return INTERPRET_RUNTIME_ERROR;
+
+            }
+            case OP_GET_PROPERTY_LONG: {
+                ObjString* name = READ_STRING_LONG();
 
                 if (IS_INSTANCE(peek(0))) {
                     ObjInstance* instance = AS_INSTANCE(peek(0));
@@ -1869,6 +1942,40 @@ static InterpretResult run() {
                 }
 
                 tableSet(&instance->fields, fieldName, peek(0));
+
+                markDirty((Obj*)instance);
+
+
+                // we remove the instance from the stack
+                // and leave only the property set value
+                Value value = pop();
+                pop();
+                push(value);
+                break;
+            }
+            case OP_SET_PROPERTY_LONG: {
+                if (!IS_INSTANCE(peek(1))) {
+                    runtimeError("Only instances can have properties");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjInstance* instance = AS_INSTANCE(peek(1));
+                ObjString* fieldName = READ_STRING_LONG();
+                Value constValue;
+
+                if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
+                    //  0 -> mutable
+                    // -1 -> const but has to be initialized
+                    // -2 -> const initialized
+                    if (valuesEqual(constValue, NUMBER_VAL(-1))) {
+                        tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
+                    } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
+                        runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                }
+
+                tableSet(&instance->fields, fieldName, peek(0));
                 markDirty((Obj*)instance);
 
                 // we remove the instance from the stack
@@ -1881,8 +1988,17 @@ static InterpretResult run() {
             case OP_METHOD:
                 defineMethod(READ_STRING());
                 break;
+            case OP_METHOD_LONG:
+                defineMethod(READ_STRING_LONG());
+                break;
             case OP_DEFINE_PROPERTY: {
                 ObjString* name = READ_STRING();
+                bool isConst = READ_BYTE();
+                defineProperty(name, isConst);
+                break;
+            }
+            case OP_DEFINE_PROPERTY_LONG: {
+                ObjString* name = READ_STRING_LONG();
                 bool isConst = READ_BYTE();
                 defineProperty(name, isConst);
                 break;
@@ -1890,7 +2006,27 @@ static InterpretResult run() {
             case OP_INVOKE: {
                 ObjString* method = READ_STRING();
                 int argc = READ_BYTE();
-                // printValue(peek(argc));
+                ObjClass* nativeClass = NULL;
+                if (isBuiltInAndSet(peek(argc), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                    // debugMethodLookup(nativeClass, method);
+#endif
+                    if (!invokeFromNative(nativeClass, method, argc)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                } else {
+                    if (!invoke(method, argc)) {
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+                }
+
+                break;
+            }
+            case OP_INVOKE_LONG: {
+                ObjString* method = READ_STRING_LONG();
+                int argc = READ_BYTE();
                 ObjClass* nativeClass = NULL;
                 if (isBuiltInAndSet(peek(argc), &nativeClass)) {
 #ifdef DEBUG_LOG_GC
@@ -1910,16 +2046,27 @@ static InterpretResult run() {
                 break;
             }
             case OP_INHERIT: {
-                ObjClass* klass = AS_CLASS(pop());
+                ObjClass* derived = AS_CLASS(pop());
                 if (!IS_CLASS(peek(0))) {
                     runtimeError("Super must be a class");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-                tableAddAll(&AS_CLASS(peek(0))->methods, &klass->methods);
+                ObjClass* super = AS_CLASS(peek(0));
+                tableAddAll(&super->methods, &derived->methods);
+                markDirty((Obj*)derived);
                 break;
             }
             case OP_GET_SUPER: {
                 ObjString* name = READ_STRING();
+                ObjClass* super = AS_CLASS(pop());
+
+                if (!bindMethod(super, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+            case OP_GET_SUPER_LONG: {
+                ObjString* name = READ_STRING_LONG();
                 ObjClass* super = AS_CLASS(pop());
 
                 if (!bindMethod(super, name)) {

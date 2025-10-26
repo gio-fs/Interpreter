@@ -200,7 +200,6 @@ static bool matchCurrent(TokenTypes type) {
     return true;
 }
 
-
 uint32_t makeConstant(Value value) {
     uint32_t constant = addConstant(currentChunk(), value);
     return constant;
@@ -317,7 +316,7 @@ static void emitFourBytes(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t b
 
 static void emitConstant(Value value) {
 
-    if (currentChunk()->constants.count < UINT8_MAX) {
+    if (currentChunk()->constants.count <= UINT8_MAX) {
         uint8_t constant = makeConstant(value);
         emitBytes(OP_CONSTANT, constant);
 
@@ -328,6 +327,12 @@ static void emitConstant(Value value) {
                                         (uint8_t)((constantLong & 0x00ff0000) >> 16));
 
     }
+}
+
+static void emitLongInstruction(OpCode opcode, int arg) {
+    emitFourBytes(opcode, (uint8_t)((arg & 0x000000ff)),
+                                         (uint8_t)((arg & 0x0000ff00) >> 8),
+                                         (uint8_t)((arg & 0x00ff0000) >> 16));
 }
 
 static int emitJump(uint8_t instruction) {
@@ -903,14 +908,27 @@ static void dot(bool canAssign) {
 
     if (canAssign && matchCurrent(TOKEN_EQUAL)) {
         expression();
-        emitBytes(OP_SET_PROPERTY, name);
+        if (name <= UINT8_MAX) {
+            emitBytes(OP_SET_PROPERTY, name);
+        } else {
+            emitLongInstruction(OP_SET_PROPERTY_LONG, name);
+        }
     }
     else if (matchCurrent(TOKEN_LEFT_PAREN)) {
         uint8_t argc = argumentList();
-        emitThreeBytes(OP_INVOKE, name, argc);
+        if (name <= UINT8_MAX) {
+            emitThreeBytes(OP_INVOKE, name, argc);
+        } else {
+            emitLongInstruction(OP_INVOKE_LONG, name);
+            emitByte(argc);
+        }
     }
     else {
-        emitBytes(OP_GET_PROPERTY, name);
+        if (name <= UINT8_MAX) {
+            emitBytes(OP_GET_PROPERTY, name);
+        } else {
+            emitLongInstruction(OP_GET_PROPERTY_LONG, name);
+        }
     }
 }
 
@@ -934,7 +952,11 @@ static void super_(bool canAssign) {
 
     namedVariable(makeSyntheticToken("this"), false);
     namedVariable(makeSyntheticToken("super"), false);
-    emitBytes(OP_GET_SUPER, arg);
+    if (arg <= UINT8_MAX) {
+        emitBytes(OP_GET_SUPER, arg);
+    } else {
+        emitLongInstruction(OP_GET_SUPER_LONG, arg);
+    }
 }
 
 
@@ -997,11 +1019,15 @@ static void method() {
     FunctionType type = TYPE_METHOD;
     if (parser.previous.length == 4
             && memcmp(parser.previous.start, "init", 4) == 0) {
-                printf("Init\n");
-                type = TYPE_INITIALIZER;
-            }
+        printf("Init\n");
+        type = TYPE_INITIALIZER;
+    }
     function(type);
-    emitBytes(OP_METHOD, constant);
+    if (constant <= UINT8_MAX) {
+        emitBytes(OP_METHOD, constant);
+    } else {
+        emitLongInstruction(OP_METHOD_LONG, constant);
+    }
 }
 
 static void field(bool isConst) {
@@ -1010,7 +1036,13 @@ static void field(bool isConst) {
     // Token name = parser.previous;
     printf("Name: %s\n", name->chars);
     consume(TOKEN_SEMICOLON, "Expect ';' after field declaration");
-    emitThreeBytes(OP_DEFINE_PROPERTY, makeConstant(OBJ_VAL(name)), (uint8_t)isConst);
+    uint32_t arg = makeConstant(OBJ_VAL(name));
+    if (arg <= UINT8_MAX) {
+        emitThreeBytes(OP_DEFINE_PROPERTY, arg, (uint8_t)isConst);
+    } else {
+        emitLongInstruction(OP_DEFINE_PROPERTY_LONG, arg);
+        emitByte(isConst);
+    }
 }
 
 static void classDeclaration() {
@@ -1019,7 +1051,12 @@ static void classDeclaration() {
     Token className = parser.previous;
     declareVariable(false);
 
-    emitBytes(OP_CLASS, nameConstant);
+    if (nameConstant <= UINT8_MAX) {
+        emitBytes(OP_CLASS, nameConstant);
+    } else {
+        emitLongInstruction(OP_CLASS_LONG, nameConstant);
+    }
+
     defineVariable(nameConstant, false);
 
     ClassCompiler classCompiler;
@@ -1099,7 +1136,12 @@ static void function(FunctionType type) {
 
     // creating function object
     ObjFunction* function = endCompiler(type);
-    emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+    uint32_t func = makeConstant(OBJ_VAL(function));
+    if (func <= UINT8_MAX) {
+        emitBytes(OP_CLOSURE, func);
+    } else {
+        emitLongInstruction(OP_CLOSURE_LONG, func);
+    }
 
     for (int i = 0; i < function->upvalueCount; i++) {
         emitByte(compiler.upvalues[i].isLocal ? 1 : 0);

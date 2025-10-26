@@ -75,7 +75,7 @@ static void updateFields(Obj* obj) {
 
     #define ADJUST_INTERNAL(obj) \
         do { \
-            if (obj != NULL && ((Obj*)obj)->forwarded != NULL && !IS_IN_NURSERY(obj)) { \
+            if (obj != NULL && ((Obj*)obj)->forwarded != NULL) { \
                 obj = (__typeof__(obj))((Obj*)obj)->forwarded; \
             } \
         } while (0)
@@ -84,7 +84,7 @@ static void updateFields(Obj* obj) {
         do { \
             if (IS_OBJ(*value)) { \
                 Obj* obj = AS_OBJ(*value); \
-            if (obj != NULL && ((Obj*)obj)->forwarded != NULL && !IS_IN_NURSERY(obj)) { \
+            if (obj != NULL && ((Obj*)obj)->forwarded != NULL) { \
                     *value = OBJ_VAL(obj->forwarded);\
                 } \
             } \
@@ -148,7 +148,7 @@ static void updateFields(Obj* obj) {
         }
         case OBJ_ARRAY: {
             ObjArray* arr = (ObjArray*)obj;
-             ADJUST_INTERNAL(arr->klass);
+            ADJUST_INTERNAL(arr->klass);
 
             for (int i = 0; i < arr->values.count; i++) {
                 ADJUST_INTERNAL_VALUE(&arr->values.values[i]);
@@ -278,12 +278,15 @@ static void updateReferences() {
         uint8_t* start = vHeap.aging.to.start;
         uint8_t* end = vHeap.aging.to.start + vHeap.aging.to.bytesAllocated;
 
+        printf("Scanning aging...\n");
         while (start < end) {
             Obj* obj = (Obj*)start;
             ADJUST_REF(obj);
             updateFields(obj);
             start += obj->size;
         }
+
+        printf("Ended to scan aging. Starting oldGen...\n");
 
         uint8_t* oldStart = vHeap.oldGen.from.start;
         uint8_t* oldEnd = vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated;
@@ -294,6 +297,8 @@ static void updateReferences() {
             updateFields(obj);
             oldStart += obj->size;
         }
+
+        printf("Ended oldGen scanning.\n");
 
     } else if (vm.isInMajor) {
         uint8_t* start = vHeap.aging.from.start;
@@ -316,9 +321,28 @@ static void updateReferences() {
             oldStart += obj->size;
         }
     }
+
 }
 
+static void clearMarkBits() {
+    uint8_t* start = vHeap.aging.from.start;
+    uint8_t* end = vHeap.aging.from.start + vHeap.aging.from.bytesAllocated;
 
+    while (start < end) {
+        Obj* obj = (Obj*)start;
+        obj->isMarked = false;
+        start += obj->size;
+    }
+
+    start = vHeap.oldGen.from.start;
+    end = vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated;
+
+    while (start < end) {
+        Obj* obj = (Obj*)start;
+        obj->isMarked = false;
+        start += obj->size;
+    }
+}
 
 static void clearForwardings() {
     uint8_t* start = vHeap.aging.from.start;
@@ -345,10 +369,6 @@ static void compactOldGen() {
     uint8_t* end = vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated;
     uint8_t* dest = vHeap.oldGen.to.start;
 
-    // first we compute the forwarding destination,
-    // then we update all refs and then we actually move
-    // to forwarded. Another strategy is to use a semispace
-
     clearForwardings();
 
     while (start < end) {
@@ -364,15 +384,17 @@ static void compactOldGen() {
         start += curr->size;
     }
 
+    vHeap.oldGen.from.bytesAllocated = vHeap.oldGen.to.bytesAllocated;
+
     updateReferences();
 
     uint8_t* temp = vHeap.oldGen.from.start;
     vHeap.oldGen.from.start = vHeap.oldGen.to.start;
     vHeap.oldGen.to.start = temp;
-    vHeap.oldGen.from.bytesAllocated = vHeap.oldGen.to.bytesAllocated;
     vHeap.oldGen.to.bytesAllocated = 0;
 
     clearForwardings();
+    clearMarkBits();
 }
 
 static void promoteObjects() {
@@ -403,18 +425,18 @@ static void promoteObjects() {
         }
     }
 
+    vHeap.aging.from.bytesAllocated = vHeap.aging.to.bytesAllocated;
+
     updateReferences();
 
     uint8_t* temp = vHeap.aging.from.start;
     vHeap.aging.from.start = vHeap.aging.to.start;
     vHeap.aging.to.start = temp;
-    vHeap.aging.from.bytesAllocated = vHeap.aging.to.bytesAllocated;
+
     vHeap.aging.to.bytesAllocated = 0;
 
     clearForwardings();
 }
-
-
 
 
 size_t align(size_t size, size_t alignment) {
@@ -432,10 +454,11 @@ void* writeNursery(Nursery* nursery, size_t size) {
         majorCollection();
     }
 
-    if (nursery->curr + aligned > nursery->start + NURSERY_SIZE && !vm.isCollecting) {
-#ifdef DEBUG_LOG_GC
-        fprintf(stderr, "[GC] writeNursery: insufficient space, triggering minorCollection\n");
-#endif
+    if ((nursery->curr + aligned) > (nursery->start + NURSERY_SIZE)) {
+        if (vm.isCollecting) {
+            fprintf(stderr, "FATAL: Nursery overflow while GC disabled\n");
+            exit(1);
+        }
         minorCollection();
     }
 
@@ -483,6 +506,7 @@ void* writeHeap(Heap* heap, size_t size) {
         if (heap->type == TYPE_OLDGEN) growOldGen(vHeap.oldGenCommit * OLDGEN_GROW_FACTOR);
         else {
             printf("Fatal error: aging overflow");
+            exit(1);
         }
 
 #ifdef DEBUG_LOG_GC
@@ -510,7 +534,10 @@ void markDirty(Obj* obj) {
             vHeap.aging.dirty.capacity = GROW_CAPACITY(vHeap.aging.dirty.capacity);
             vHeap.aging.dirty.objects = realloc(vHeap.aging.dirty.objects, sizeof(Obj*) * vHeap.aging.dirty.capacity);
 
-            if (vHeap.aging.dirty.objects == NULL) exit(1);
+            if (vHeap.aging.dirty.objects == NULL) {
+                printf("Failed to realloc dirty.objects\n");
+                exit(1);
+            }
         }
 
         vHeap.aging.dirty.objects[vHeap.aging.dirty.count++] = obj;
@@ -522,7 +549,10 @@ void markDirty(Obj* obj) {
             vHeap.oldGen.dirty.capacity = GROW_CAPACITY(vHeap.oldGen.dirty.capacity);
             vHeap.oldGen.dirty.objects = realloc(vHeap.oldGen.dirty.objects, sizeof(Obj*) * vHeap.oldGen.dirty.capacity);
 
-            if (vHeap.aging.dirty.objects == NULL) exit(1);
+            if (vHeap.aging.dirty.objects == NULL) {
+                printf("Failed to realloc dirty.objects\n");
+                exit(1);
+            }
         }
 
         vHeap.oldGen.dirty.objects[vHeap.oldGen.dirty.count++] = obj;
@@ -716,12 +746,16 @@ static void scanOldGenerations() {
 
     for (int i = 0; i < vHeap.aging.dirty.count; i++) {
         Obj* dirty = vHeap.aging.dirty.objects[i];
+        ADJUST_REF(dirty);
+        updateFields(dirty);
         scanObjectFields(dirty);
         dirty->isDirty = false;
     }
 
     for (int i = 0; i < vHeap.oldGen.dirty.count; i++) {
         Obj* dirty = vHeap.oldGen.dirty.objects[i];
+        ADJUST_REF(dirty);
+        updateFields(dirty);
         scanObjectFields(dirty);
         dirty->isDirty = false;
     }
@@ -977,22 +1011,6 @@ void* reallocate(void* ptr, size_t oldSize, size_t newSize) {
     return result;
 }
 
-void clearAllMarkBits() {
-
-    uint8_t* ptr = vHeap.aging.from.start;
-    while (ptr < vHeap.aging.from.start + vHeap.aging.from.bytesAllocated) {
-        Obj* obj = (Obj*)ptr;
-        obj->isMarked = false;
-        ptr += obj->size;
-    }
-
-    ptr = vHeap.oldGen.from.start;
-    while (ptr < vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated) {
-        Obj* obj = (Obj*)ptr;
-        obj->isMarked = false;
-        ptr += obj->size;
-    }
-}
 
 void clearDirtyBits() {
     uint8_t* ptr = vHeap.aging.from.start;
@@ -1029,7 +1047,10 @@ void markObj(Obj* obj) {
         vm.grayCapacity = GROW_CAPACITY(vm.grayCapacity);
         vm.grayStack = realloc(vm.grayStack, sizeof(Obj*) * vm.grayCapacity);
 
-        if (vm.grayStack == NULL) exit(1);
+        if (vm.grayStack == NULL) {
+            printf("Failed to realloc grayStack\n");
+            exit(1);
+        }
     }
 
     vm.grayStack[vm.grayCount++] = obj;
@@ -1209,7 +1230,7 @@ void majorCollection() {
     vm.isInMajor = true;
     size_t before = vHeap.oldGen.from.bytesAllocated;
 
-    clearAllMarkBits();
+    clearMarkBits();
     markRoots();
     traceReferences();
     sweep();
