@@ -23,8 +23,8 @@ struct Obj {
     ObjType type;
     bool isMarked;
     bool isDirty;
-    int age;
-    size_t size;
+    uint8_t age;
+    int size;
     struct Obj* forwarded;
 };
 struct ObjString {

@@ -188,8 +188,10 @@ static bool callValue(Value callee, int argCount) {
             }
             case OBJ_CLASS: {
                 ObjClass* klass = AS_CLASS(callee);
-                vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
-
+                push(OBJ_VAL(klass));
+                vm.stackTop[-argCount - 2] = OBJ_VAL(newInstance(klass));
+                pop();
+                
                 // ObjString* check = tableFindString(&klass->methods, "init", 4, hashString("init", 4));
                 // printValue(OBJ_VAL(check));
                 // printf("\n");

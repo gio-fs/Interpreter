@@ -125,6 +125,7 @@ ObjUpvalue* newUpvalue(Value* slot) {
 
 ObjDictionary* newDictionary() {
     ObjDictionary* dict = ALLOCATE_OBJ(ObjDictionary, OBJ_DICTIONARY);
+
     initTable(&dict->map);
     initEntryList(&dict->entries);
     Value dictClass;

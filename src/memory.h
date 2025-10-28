@@ -5,7 +5,8 @@
 
 typedef enum {
     TYPE_AGING,
-    TYPE_OLDGEN
+    TYPE_OLDGEN,
+    TYPE_BUILTIN
 } HeapType;
 typedef struct {
     uint8_t* start;
@@ -46,7 +47,10 @@ typedef struct {
     size_t oldGenOffset;
     size_t oldGenCommit;
     SemiSpace oldGen;
+    bool isUsingToSpace;
 
+    size_t builtInOffset;
+    Heap builtIn;
 } GenerationalHeap;
 
 extern GenerationalHeap vHeap;
@@ -69,15 +73,27 @@ extern GenerationalHeap vHeap;
 
 #define DIRTY_FLAG 0x2
 #define MARKED_FLAG 0x1
+#define AGE 0xFC
 #define PAGE_SIZE 4096
 #define OLDGEN_GROW_FACTOR 2
 #define RESERVED_SIZE GB(5)
 #define NURSERY_SIZE MB(32)
 #define AGING_SIZE (NURSERY_SIZE * 4)
-#define OLDGEN_SIZE (RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE)
+#define BUILTIN_SIZE MB(10)
+#define OLDGEN_SIZE (RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE - BUILTIN_SIZE)
 #define OLDGEN_INITIAL_COMMIT (OLDGEN_SIZE / 16)
 #define ALIGNMENT 32
 #define PROMOTING_AGE 3
+
+#define IS_IN_NURSERY(obj) \
+                ((uint8_t*)obj >= vHeap.nursery.start \
+                            && (uint8_t*)obj < vHeap.nursery.curr)
+#define IS_IN_AGING(obj) \
+                ((uint8_t*)obj >= vHeap.aging.from.start \
+                            && (uint8_t*)obj < vHeap.aging.from.start + vHeap.aging.from.bytesAllocated)
+#define IS_IN_OLD(obj) \
+                ((uint8_t*)obj >= vHeap.oldGen.from.start \
+                            && (uint8_t*)obj < vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated)
 
 void* reallocate(void* ptr, size_t oldSize, size_t newSize);
 void markObj(Obj* obj);
