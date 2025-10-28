@@ -100,10 +100,6 @@ static void updateFields(Obj* obj) {
         case OBJ_FUNCTION: {
             ObjFunction* func = (ObjFunction*)obj;
             ADJUST_INTERNAL(func->name);
-            if (func->name != NULL) {
-                printValue(OBJ_VAL(func->name));
-                printf("\n");
-            }
 
             for (int i = 0; i < func->chunk.constants.count; i++) {
                 ADJUST_INTERNAL_VALUE(&func->chunk.constants.values[i]);
@@ -278,7 +274,6 @@ static void updateReferences() {
         uint8_t* start = vHeap.aging.to.start;
         uint8_t* end = vHeap.aging.to.start + vHeap.aging.to.bytesAllocated;
 
-        printf("Scanning aging...\n");
         while (start < end) {
             Obj* obj = (Obj*)start;
             ADJUST_REF(obj);
@@ -286,7 +281,6 @@ static void updateReferences() {
             start += obj->size;
         }
 
-        printf("Ended to scan aging. Starting oldGen...\n");
 
         uint8_t* oldStart = vHeap.oldGen.from.start;
         uint8_t* oldEnd = vHeap.oldGen.from.start + vHeap.oldGen.from.bytesAllocated;
@@ -298,7 +292,6 @@ static void updateReferences() {
             oldStart += obj->size;
         }
 
-        printf("Ended oldGen scanning.\n");
 
     } else if (vm.isInMajor) {
         uint8_t* start = vHeap.aging.from.start;
@@ -420,9 +413,6 @@ static void promoteObjects() {
         }
 
         start += currSize;
-        if (start == end) {
-            printf("Ended scan, starting references update\n");
-        }
     }
 
     vHeap.aging.from.bytesAllocated = vHeap.aging.to.bytesAllocated;
@@ -760,6 +750,9 @@ static void scanOldGenerations() {
         dirty->isDirty = false;
     }
 
+    vHeap.aging.dirty.count = 0;
+    vHeap.oldGen.dirty.count = 0;
+
     // uint8_t* start = vHeap.aging.from.start;
     // uint8_t* end = vHeap.aging.from.start + vHeap.aging.from.bytesAllocated;
 
@@ -778,7 +771,6 @@ static void scanOldGenerations() {
     //     start += obj->size;
     // }
 
-    printf("Ended scanOldGEnerations\n");
 }
 
 static void copyReferences() {
@@ -907,8 +899,7 @@ void minorCollection() {
     promoteObjects();
 
     initValueArray(&vHeap.worklist);
-    vHeap.aging.dirty.count = 0;
-    vHeap.oldGen.dirty.count = 0;
+
 
 #ifdef DEBUG_LOG_GC
     fprintf(stderr, "[GC] Nursery after reset: curr=%p used=0 free=%zu\n",
@@ -917,7 +908,7 @@ void minorCollection() {
 #endif
     vm.isCollecting = false;
     vm.isInMinor = false;
-    printf("Ended minor collection. Aging size is %d.\n", vHeap.aging.from.bytesAllocated);
+    printf("Ended minor collection. Aging size is %lld. OldGen size is %lld.\n", vHeap.aging.from.bytesAllocated, vHeap.oldGen.from.bytesAllocated);
 }
 
 

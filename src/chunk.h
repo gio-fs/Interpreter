@@ -5,6 +5,7 @@
 #include "value.h"
 #include "table.h"
 
+
 typedef enum {
     OP_CONSTANT,
     OP_CONSTANT_LONG,
@@ -16,7 +17,6 @@ typedef enum {
     OP_JUMP,
     OP_JUMP_IF_FALSE,
     OP_LOOP,
-    OP_CONST,
     OP_GET_LOCAL,
     OP_GET_GLOBAL,
     OP_GET_GLOBAL_LONG,
@@ -43,18 +43,11 @@ typedef enum {
     OP_MAP_LONG,
     OP_GET_ELEMENT,
     OP_SET_ELEMENT,
-    OP_GET_MAP,
-    OP_SET_MAP,
     OP_GET_ELEMENT_GLOBAL,
     OP_SET_ELEMENT_GLOBAL,
-    OP_GET_MAP_GLOBAL,
-    OP_SET_MAP_GLOBAL,
     OP_GET_ELEMENT_GLOBAL_LONG,
     OP_SET_ELEMENT_GLOBAL_LONG,
-    OP_GET_MAP_GLOBAL_LONG,
-    OP_SET_MAP_GLOBAL_LONG,
     OP_FOR_EACH,
-    OP_FOR_EACH_GLOBAL,
     OP_SAVE_VALUE,
     OP_REVERSE_N,
     OP_QUEUE,

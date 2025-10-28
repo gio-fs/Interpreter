@@ -11,10 +11,13 @@
         }
     }
 
+
+
     var start = clock();
 
     // Build binary tree with 10K nodes
     var root = Node(0);
+    // child.metadata = [1];
     var nodes = [root];
 
     for i in [1..10000] {
@@ -34,7 +37,7 @@
         node.parent = parent;
 
         // Add metadata to stress GC
-        for j in [1..10] {
+        for j in [1..100] {
             node.metadata.add({"id": j, "value": i * j});
         }
 
@@ -84,7 +87,7 @@
         var j = 1;
 
         // Create many short-lived objects
-        for i in [1..500] {
+        for i in [1..5000] {
             var temp = {
                 "id": i,
                 "round": round,
@@ -139,7 +142,7 @@
 
     // Access with string concatenation (tests interning)
     var sum = 0;
-    for i in [1..50000] {
+    for i in [1..500000] {
         var lookupKey = "key_" + i + "_suffix_" + (i * 2);
         var val = strings.get(lookupKey);
 
@@ -225,11 +228,11 @@
     var mainTable = {};
 
     // Fill with many entries to force resizing
-    for i in [1..10000] {
+    for i in [1..1000] {
         var key = "k" + i;
         var nestedTable = {};
 
-        for j in [1..200] {
+        for j in [1..2000] {
             nestedTable.add("field" + j, i * j);
         }
 
@@ -278,7 +281,7 @@
         var arr = [];
 
         // Variable size arrays
-        var size = rand (50, 200);
+        var size = rand (50, 2000);
         for j in [1..size] {
             arr.add({"idx": j, "val": i * j});
         }
@@ -294,7 +297,7 @@
 
             // Create temporary arrays
             var temp = [];
-            for k in [1..100] {
+            for k in [1..10] {
                 temp.add(k);
             }
         }
@@ -308,81 +311,81 @@
 // TEST 9: Mixed Workload (Real-World Simulation)
 // Tests: Everything together, realistic usage patterns
 // ============================================================================
-// {
-//     print "\n=== Test 9: Mixed Workload ===";
+{
+    print "\n=== Test 9: Mixed Workload ===";
 
-//     class DataProcessor {
-//         init() {
-//             this.cache = {};
-//             this.results = [];
-//             this.config = {
-//                 "batchSize": 100,
-//                 "timeout": 5000,
-//                 "retries": 3
-//             };
-//         }
+    class DataProcessor {
+        init() {
+            this.cache = {};
+            this.results = [];
+            this.config = {
+                "batchSize": 100,
+                "timeout": 5000,
+                "retries": 3
+            };
+        }
 
-//         process(data) {
-//             var key = "batch_" + data.get("id");
+        process(data) {
+            var key = "batch_" + data.get("id");
 
-//             if (this.cache.get(key) == nil) {
-//                 var processed = {};
-//                 processed.add("id", data.get("id"));
-//                 processed.add("value", data.get("value") * 2);
-//                 processed.add("metadata", [1, 2, 3, 4, 5]);
+            if (this.cache.get(key) == nil) {
+                var processed = {};
+                processed.add("id", data.get("id"));
+                processed.add("value", data.get("value") * 2);
+                processed.add("metadata", [1, 2, 3, 4, 5]);
 
-//                 this.cache.add(key, processed);
-//                 this.results.add(processed);
-//             }
+                this.cache.add(key, processed);
+                this.results.add(processed);
+            }
 
-//             return this.cache.get(key);
-//         }
+            return this.cache.get(key);
+        }
 
-//         getResults() {
-//             return this.results;
-//         }
+        getResults() {
+            return this.results;
+        }
 
-//         clearCache() {
-//             this.cache = {};
-//         }
-//     }
+        clearCache() {
+            this.cache = {};
+        }
+    }
 
-//     var start = clock();
+    var start = clock();
 
-//     var processors = [];
+    var processors = [];
 
-//     // Create multiple processors
-//     for i in [1..100] {
-//         processors.add(DataProcessor());
-//     }
+    // Create multiple processors
+    for i in [1..100] {
+        processors.add(DataProcessor());
+    }
 
-//     // Process data through all processors
-//     var sum = 0;
-//     for round in [1..200] {
-//         for processor in processors {
-//             var data = {"id": round, "value": round * 10};
-//             var result = processor.process(data);
-//             sum = sum + result.get("value");
+    // Process data through all processors
+    var sum = 0;
+    for round in [1..2000] {
+        for processor in processors {
+            var data = {"id": round, "value": round * 10};
+            var result = processor.process(data);
+            sum = sum + result.get("value");
 
-//             //Create temporary objects
-//             var temp = [];
-//             for k in [1..20] {
-//                 var o = k;
-//                 var d = {"key": o, "val": round * o};
-//                 temp.add(d);
-//             }
+            //Create temporary objects
+            var temp = [];
+            for k in [1..20] {
+                var o = k;
+                var d = {"key": o, "val": round * o};
+                temp.add(d);
+            }
 
-//             // Periodic cache clear (tests old gen cleanup)
-//             var r = round - (round / 50) * 50;
-//             if (r == 0) {
-//                 processor.clearCache();
-//             }
-//         }
-//     }
+            // Periodic cache clear (tests old gen cleanup)
+            var r = round - (round / 50) * 50;
+            if (r == 0) {
+                processor.clearCache();
+            }
+        }
+    }
 
-//     var end = clock();
-//     print "Mixed workload: ${end-start}s, sum: ${sum}";
-// }
+    var end = clock();
+    print "Mixed workload: ${end-start}s, sum: ${sum}";
+}
 
 // ============================================================================
 // TEST 10: Memory Pressure (Stress Old Gen and Compaction)
@@ -398,11 +401,11 @@
             this.metadata = {};
             this.refs = [];
 
-            for i in [1..200] {
+            for i in [1..2000] {
                 this.data.add(i);
             }
 
-            for i in [1..50] {
+            for i in [1..500] {
                 this.metadata.add("key" + i, "value" + i);
             }
         }
@@ -478,10 +481,10 @@
     }
 
     // Force multiple GC cycles
-    for round in [1..100] {
+    for round in [1..1000] {
         var temp = [];
 
-        for i in [1..100] {
+        for i in [1..1000] {
             temp.add({"round": round, "id": i});
         }
 
@@ -521,10 +524,10 @@
     var oldContainers = [];
 
     // Create old gen objects
-    for i in [1..500] {
+    for i in [1..5000] {
         var container = Container(i);
 
-        for j in [1..10] {
+        for j in [1..1000] {
             container.properties.add("prop" + j, j);
         }
 
@@ -538,7 +541,7 @@
 
     // Now create young objects and reference from old
     var sum = 0;
-    for round in [1..100] {
+    for round in [1..1000] {
         for container in oldContainers {
             // Create young object
             var youngChild = {

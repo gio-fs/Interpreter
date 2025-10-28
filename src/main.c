@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include <assert.h>
 #include <signal.h>
 #include "common.h"
 #include "chunk.h"
@@ -75,7 +76,7 @@ int main(int argc, const char* argv[]) {
     initVM();
     signal(SIGINT, clear);
     signal(SIGTERM, clear);
-
+    
     if (argc == 1) {
         repl();
     } else if (argc == 2) {

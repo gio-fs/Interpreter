@@ -67,21 +67,24 @@ extern GenerationalHeap vHeap;
 #define MB(x) ((size_t)(x) * 1024 * 1024)
 #define GB(x) ((size_t)(x) * 1024 * 1024 * 1024)
 
+#define DIRTY_FLAG 0x2
+#define MARKED_FLAG 0x1
 #define PAGE_SIZE 4096
 #define OLDGEN_GROW_FACTOR 2
-#define RESERVED_SIZE GB(4)
-#define NURSERY_SIZE MB(1)
+#define RESERVED_SIZE GB(5)
+#define NURSERY_SIZE MB(32)
 #define AGING_SIZE (NURSERY_SIZE * 4)
 #define OLDGEN_SIZE (RESERVED_SIZE - 2 * AGING_SIZE - NURSERY_SIZE)
 #define OLDGEN_INITIAL_COMMIT (OLDGEN_SIZE / 16)
-#define ALIGNMENT 8
-#define PROMOTING_AGE 2
+#define ALIGNMENT 32
+#define PROMOTING_AGE 3
 
 void* reallocate(void* ptr, size_t oldSize, size_t newSize);
 void markObj(Obj* obj);
 void markValue(Value slot);
 void markTable(Table* table);
 void majorCollection();
+void minorCollection();
 void freeObjects();
 void initGenHeap();
 void* writeNursery(Nursery* nursery, size_t size);

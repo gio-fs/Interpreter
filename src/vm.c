@@ -14,6 +14,7 @@
 #include "clox_debug.h"
 #include "vm.h"
 
+
 #define MAX_NESTING_LVL 64
 
 VM vm;
@@ -37,6 +38,10 @@ static Value randomNative(int argCount, Value* args) {
     return NUMBER_VAL(rand() % (int)(AS_NUMBER(args[1])) + (int)(AS_NUMBER(args[0])));
 }
 
+static Value endLine(int argCount, Value* args) {
+    fprintf(stdout, "\n");
+    return NIL_VAL;
+}
 
 void initCallFrameArray(CallFrameArray* arr) {
     arr->capacity = FRAMES_INIT_CAPACITY;
@@ -183,10 +188,7 @@ static bool callValue(Value callee, int argCount) {
             }
             case OBJ_CLASS: {
                 ObjClass* klass = AS_CLASS(callee);
-                push(OBJ_VAL(klass));
-                ObjInstance* instance = newInstance(klass);
-                pop();
-                vm.stackTop[-argCount - 1] = OBJ_VAL(instance);
+                vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
 
                 // ObjString* check = tableFindString(&klass->methods, "init", 4, hashString("init", 4));
                 // printValue(OBJ_VAL(check));
@@ -514,7 +516,7 @@ static bool isIterable(Value value) {
 }
 
 #ifdef DEBUG_LOG_GC
-// In your VM where you do method lookup (probably in OP_GET_PROPERTY or similar)
+// In your VM where you do method lookup (probably in DO_OP_GET_PROPERTY or similar)
 void debugMethodLookup(ObjClass* klass, ObjString* name) {
     fprintf(stderr, "\n[DEBUG] Method lookup: class=%p name=%p (%s)\n",
             (void*)klass, (void*)name, name->chars);
@@ -773,6 +775,7 @@ void initVM() {
 
     defineNative("clock", clockNative);
     defineNative("rand", randomNative);
+    defineNative("endl", endLine);
     vm.arrayClass = defineBuiltinClass(vm.array_NativeString);
     defineBuiltinMethod(vm.arrayClass, "add", array_AddNative);
     defineBuiltinMethod(vm.arrayClass, "set", array_SetNative);
@@ -813,6 +816,93 @@ void freeVM() {
 static InterpretResult run() {
     CallFrame* frame = &vm.frameArray.frames[vm.frameArray.count - 1];
 
+    static void* dispatchTable[] = {
+        &&DO_OP_CONSTANT,
+        &&DO_OP_CONSTANT_LONG,
+        &&DO_OP_NIL,
+        &&DO_OP_TRUE,
+        &&DO_OP_FALSE,
+        &&DO_OP_POP,
+        &&DO_OP_PUSH,
+        &&DO_OP_JUMP,
+        &&DO_OP_JUMP_IF_FALSE,
+        &&DO_OP_LOOP,
+        &&DO_OP_GET_LOCAL,
+        &&DO_OP_GET_GLOBAL,
+        &&DO_OP_GET_GLOBAL_LONG,
+        &&DO_OP_DEFINE_GLOBAL,
+        &&DO_OP_DEFINE_CONST_GLOBAL,
+        &&DO_OP_DEFINE_GLOBAL_LONG,
+        &&DO_OP_DEFINE_CONST_GLOBAL_LONG,
+        &&DO_OP_SET_LOCAL,
+        &&DO_OP_SET_GLOBAL,
+        &&DO_OP_SET_GLOBAL_LONG,
+        &&DO_OP_CLOSURE,
+        &&DO_OP_CALL,
+        &&DO_OP_ARRAY_CALL,
+        &&DO_OP_GET_UPVALUE,
+        &&DO_OP_SET_UPVALUE,
+        &&DO_OP_GET_ELEMENT_UPVALUE,
+        &&DO_OP_SET_ELEMENT_UPVALUE,
+        &&DO_OP_GET_ELEMENT_FROM_TOP,
+        &&DO_OP_SWAP,
+        &&DO_OP_CLOSE_UPVALUE,
+        &&DO_OP_ARRAY,
+        &&DO_OP_ARRAY_LONG,
+        &&DO_OP_MAP,
+        &&DO_OP_MAP_LONG,
+        &&DO_OP_GET_ELEMENT,
+        &&DO_OP_SET_ELEMENT,
+        &&DO_OP_GET_ELEMENT_GLOBAL,
+        &&DO_OP_SET_ELEMENT_GLOBAL,
+        &&DO_OP_GET_ELEMENT_GLOBAL_LONG,
+        &&DO_OP_SET_ELEMENT_GLOBAL_LONG,
+        &&DO_OP_FOR_EACH,
+        &&DO_OP_SAVE_VALUE,
+        &&DO_OP_REVERSE_N,
+        &&DO_OP_QUEUE,
+        &&DO_OP_DEQUE,
+        &&DO_OP_QUEUE_REWIND,
+        &&DO_OP_QUEUE_ADVANCE,
+        &&DO_OP_QUEUE_CLEAR,
+        &&DO_OP_INCREMENT_NESTING_LVL,
+        &&DO_OP_DECREMENT_NESTING_LVL,
+        &&DO_OP_CHECK_TYPE,
+        &&DO_OP_INDIRECT_STORE,
+        &&DO_OP_PUSH_FROM,
+        &&DO_OP_RANGE,
+        &&DO_OP_EQUAL,
+        &&DO_OP_EQUAL_AND,
+        &&DO_OP_GREATER,
+        &&DO_OP_LESS,
+        &&DO_OP_ADD,
+        &&DO_OP_SUBTRACT,
+        &&DO_OP_MULTIPLY,
+        &&DO_OP_DIVIDE,
+        &&DO_OP_NOT,
+        &&DO_OP_NEGATE,
+        &&DO_OP_PRINT,
+        &&DO_OP_RETURN,
+        &&DO_OP_CLASS,
+        &&DO_OP_DEFINE_PROPERTY,
+        &&DO_OP_GET_PROPERTY,
+        &&DO_OP_SET_PROPERTY,
+        &&DO_OP_METHOD,
+        &&DO_OP_INVOKE,
+        &&DO_OP_INHERIT,
+        &&DO_OP_GET_SUPER,
+        &&DO_OP_GET_PROPERTY_LONG,
+        &&DO_OP_SET_PROPERTY_LONG,
+        &&DO_OP_DEFINE_PROPERTY_LONG,
+        &&DO_OP_INVOKE_LONG,
+        &&DO_OP_GET_SUPER_LONG,
+        &&DO_OP_METHOD_LONG,
+        &&DO_OP_CLASS_LONG,
+        &&DO_OP_CLOSURE_LONG
+    };
+
+    #define DISPATCH() goto *dispatchTable[*frame->ip++]
+
     #define READ_BYTE() (*frame->ip++)
     #define READ_WORD() (frame->ip += 2, (uint16_t)(frame->ip[-2] << 8 | frame->ip[-1]))
     #define READ_LONG() (frame->ip += 3, (uint32_t)(frame->ip[-3] | frame->ip[-2] << 8 | frame->ip[-1] << 16))
@@ -836,6 +926,8 @@ static InterpretResult run() {
     #ifdef DEBUG_TRACE_EXECUTION
         // int count = 0;
     #endif
+
+    DISPATCH();
     for (;;) {
 
         #ifdef DEBUG_TRACE_EXECUTION
@@ -861,1220 +953,1320 @@ static InterpretResult run() {
 
         #endif
 
-        uint8_t instruction = READ_BYTE();
+        DO_OP_CONSTANT: {
+            Value constant = READ_CONSTANT();
+            push(constant);
+            DISPATCH();
+        }
+        DO_OP_CONSTANT_LONG: {
+            uint32_t longIndex = READ_LONG(); // longIndex is 3 bytes
+            Value constantLong = frame->closure->function->chunk.constants.values[longIndex];
+            push(constantLong);
+            DISPATCH();
+        }
+        DO_OP_NIL:
+            push(NIL_VAL); DISPATCH();
+        DO_OP_TRUE:
+            push(BOOL_VAL(true));
+            DISPATCH();
+        DO_OP_FALSE:
+            push(BOOL_VAL(false));
+            DISPATCH();
+        DO_OP_POP:
+            pop();
+            DISPATCH();
+        DO_OP_JUMP: {
+            uint16_t offset = READ_WORD();
+            frame->ip += offset;
+            DISPATCH();
+        }
+        DO_OP_LOOP: {
+            uint16_t offset = READ_WORD();
+            frame->ip -= offset;
+            DISPATCH();
+        }
+        DO_OP_JUMP_IF_FALSE: {
+            uint16_t offset = READ_WORD();
+            // checking the if condtition on top of the stack
+            if (isFalsey(peek(0))) frame->ip += offset;
+            DISPATCH();
+        }
+        DO_OP_GET_LOCAL: {
+            // we need to push the local's value on top of the stack since
+            // other bytecode instructions only look for stackTop - 1
+            uint8_t slot = READ_BYTE();
+            push(frame->slots[slot]);
+            DISPATCH();
+        }
+        DO_OP_GET_GLOBAL: {
+            ObjString* name = READ_STRING();
+            Value value;
+            if(!tableGet(&vm.globals, name, &value)) {
+                runtimeError("Undefined variable '%s' .", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            push(value);
+            DISPATCH();
+        }
+        DO_OP_GET_GLOBAL_LONG: {
+            uint32_t longIndex = READ_LONG();
+            ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
+            Value valueLong;
+            if(!tableGet(&vm.globals, name, &valueLong)) {
+                runtimeError("Undefined variable '%s' .", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            push(valueLong);
+            DISPATCH();
+        }
+        DO_OP_DEFINE_GLOBAL: {
+            ObjString* name = READ_STRING();
+            Value value = peek(0);
 
-        switch (instruction) {
-            case OP_CONSTANT: {
-                Value constant = READ_CONSTANT();
-                push(constant);
-                break;
+            if (!tableSet(&vm.globals, name, value) || tableGet(&vm.constGlobals, name, &value)) {
+                runtimeError("Variable '%s' is already defined. '%s'", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
             }
-            case OP_CONSTANT_LONG: {
-                uint32_t longIndex = READ_LONG(); // longIndex is 3 bytes
-                Value constantLong = frame->closure->function->chunk.constants.values[longIndex];
-                push(constantLong);
-                break;
+
+            pop();
+            DISPATCH();
+        }
+        DO_OP_DEFINE_CONST_GLOBAL: {
+            ObjString* name = READ_STRING();
+            Value value = peek(0);
+
+            if (!tableSet(&vm.constGlobals, name, value) || tableGet(&vm.globals, name, &value)) {
+                runtimeError("Variable '%s' is already defined.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
             }
-            case OP_NIL:
-                push(NIL_VAL); break;
-            case OP_TRUE:
-                push(BOOL_VAL(true));
-                break;
-            case OP_FALSE:
-                push(BOOL_VAL(false));
-                break;
-            case OP_POP:
+
+            pop();
+            DISPATCH();
+        }
+        DO_OP_DEFINE_GLOBAL_LONG: {
+            uint32_t longIndex = READ_LONG();
+            ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
+            Value value = peek(0);
+            if (!tableSet(&vm.globals, name, value) || tableGet(&vm.constGlobals, name, &value)) {
+                runtimeError("Variable '%s' is already defined.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            pop();
+            DISPATCH();
+        }
+        DO_OP_DEFINE_CONST_GLOBAL_LONG: {
+            uint32_t longIndex = READ_LONG();
+            ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
+            Value value = peek(0);
+            if (!tableSet(&vm.constGlobals, name, value) || tableGet(&vm.globals, name, &value)) {
+                runtimeError("Variable '%s' is already defined.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            pop();
+            DISPATCH();
+        }
+        DO_OP_SET_LOCAL: {
+            // we need to push the local's value on top of the stack since
+            // other bytecode instructions only look for stackTop - 1
+            uint8_t slot = READ_BYTE();
+            frame->slots[slot] = peek(0);
+
+            DISPATCH();
+        }
+        DO_OP_SET_GLOBAL: {
+            ObjString* name = READ_STRING();
+            if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
+                runtimeError("Variable '%s' is const.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (tableSet(&vm.globals, name, peek(0))) {
+                tableDelete(&vm.globals, name);
+                runtimeError("Undefined variable '%s'", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            DISPATCH();
+        }
+        DO_OP_SET_GLOBAL_LONG: {
+            uint32_t longIndex = READ_LONG();
+            ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
+            if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
+                runtimeError("Variable '%s' is const.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            if (tableSet(&vm.globals, name, peek(0))) {
+                tableDelete(&vm.globals, name);
+                runtimeError("Undefined variable '%s'", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            DISPATCH();
+        }
+
+        DO_OP_ARRAY: {
+            int length = READ_BYTE();
+            // -1 because peek already returns last element so this way
+            // distance becomes -1 -(length - 1),  thus length elements from top
+            ObjArray* arr = newArray();
+            push(OBJ_VAL(arr));
+
+            for (int i = length - 1; i >= 0; i--) {
+                if (!appendArray(arr, peek(i + 1))) {
+                    ObjString* errorType = valueTypeToString(peek(i).type);
+                    ObjString* arrType = valueTypeToString(VAL_NUMBER);
+                    runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+            }
+
+            // pop();
+
+            for (int i = length; i >= 0; i--) {
                 pop();
-                break;
-            case OP_JUMP: {
-                uint16_t offset = READ_WORD();
-                frame->ip += offset;
-                break;
             }
-            case OP_LOOP: {
-                uint16_t offset = READ_WORD();
-                frame->ip -= offset;
-                break;
-            }
-            case OP_JUMP_IF_FALSE: {
-                uint16_t offset = READ_WORD();
-                // checking the if condtition on top of the stack
-                if (isFalsey(peek(0))) frame->ip += offset;
-                break;
-            }
-            case OP_GET_LOCAL: {
-                // we need to push the local's value on top of the stack since
-                // other bytecode instructions only look for stackTop - 1
-                uint8_t slot = READ_BYTE();
-                push(frame->slots[slot]);
-                break;
-            }
-            case OP_GET_GLOBAL: {
-                ObjString* name = READ_STRING();
-                Value value;
-                if(!tableGet(&vm.globals, name, &value)) {
-                    runtimeError("Undefined variable '%s' .", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                push(value);
-                break;
-            }
-            case OP_GET_GLOBAL_LONG: {
-                uint32_t longIndex = READ_LONG();
-                ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
-                Value valueLong;
-                if(!tableGet(&vm.globals, name, &valueLong)) {
-                    runtimeError("Undefined variable '%s' .", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                push(valueLong);
-                break;
-            }
-            case OP_DEFINE_GLOBAL: {
-                ObjString* name = READ_STRING();
-                Value value = peek(0);
 
-                if (!tableSet(&vm.globals, name, value) || tableGet(&vm.constGlobals, name, &value)) {
-                    runtimeError("Variable '%s' is already defined. '%s'", name->chars);
+            push(OBJ_VAL(arr));
+            DISPATCH();
+        }
+        DO_OP_ARRAY_LONG: {
+            int length = READ_LONG();
+            // -1 because peek already returns last element so this way
+            // distance becomes -1 -(length - 1),  thus length elements from top
+            ObjArray* arr = newArray();
+            push(OBJ_VAL(arr));
+
+            for (int i = length - 1; i >= 0; i--) {
+                if (!appendArray(arr, peek(i + 1))) {
+                    ObjString* errorType = valueTypeToString(peek(i).type);
+                    ObjString* arrType = valueTypeToString(VAL_NUMBER);
+                    runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+            }
 
+            pop();
+
+            for (int i = length - 1; i >= 0; i--) {
                 pop();
-                break;
             }
-            case OP_DEFINE_CONST_GLOBAL: {
-                ObjString* name = READ_STRING();
-                Value value = peek(0);
 
-                if (!tableSet(&vm.constGlobals, name, value) || tableGet(&vm.globals, name, &value)) {
-                    runtimeError("Variable '%s' is already defined.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
+            push(OBJ_VAL(arr));
+            DISPATCH();
+        }
+        DO_OP_MAP: {
+            int count = READ_BYTE();
+            ObjDictionary* dict = newDictionary();
+            push(OBJ_VAL(dict));
+
+            for (int i = count; i > 0; i -= 2) {
+                ObjString* key = valueToString(peek(i));
+                Value elem = peek(i - 1);
+
+                if (tableSet(&dict->map, key, elem)) {
+                    Entry curr = {.key = key, .value = elem};
+                    writeEntryList(&dict->entries, curr);
                 }
 
+                markDirty((Obj*)dict);
+            }
+
+            for (int i = 0; i < count; i++) {
                 pop();
-                break;
             }
-            case OP_DEFINE_GLOBAL_LONG: {
-                uint32_t longIndex = READ_LONG();
-                ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
-                Value value = peek(0);
-                if (!tableSet(&vm.globals, name, value) || tableGet(&vm.constGlobals, name, &value)) {
-                    runtimeError("Variable '%s' is already defined.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
+
+            pop();
+            push(OBJ_VAL(dict));
+            DISPATCH();
+        }
+        DO_OP_MAP_LONG: {
+            uint32_t count = READ_LONG();
+            ObjDictionary* dict = newDictionary();
+            push(OBJ_VAL(dict));
+
+            for (int i = count; i > 0; i -= 2) {
+                ObjString* key = valueToString(peek(i));
+                Value elem = peek(i - 1);
+
+                if (tableSet(&dict->map, key, elem)) {
+                    Entry curr = {.key = key, .value = elem};
+                    writeEntryList(&dict->entries, curr);
                 }
+
+                markDirty((Obj*)dict);
+            }
+
+            pop();
+
+            for (int i = 0; i < count; i++) {
                 pop();
-                break;
-            }
-            case OP_DEFINE_CONST_GLOBAL_LONG: {
-                uint32_t longIndex = READ_LONG();
-                ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
-                Value value = peek(0);
-                if (!tableSet(&vm.constGlobals, name, value) || tableGet(&vm.globals, name, &value)) {
-                    runtimeError("Variable '%s' is already defined.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                pop();
-                break;
-            }
-            case OP_SET_LOCAL: {
-                // we need to push the local's value on top of the stack since
-                // other bytecode instructions only look for stackTop - 1
-                uint8_t slot = READ_BYTE();
-                frame->slots[slot] = peek(0);
-
-                break;
-            }
-            case OP_SET_GLOBAL: {
-                ObjString* name = READ_STRING();
-                if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
-                    runtimeError("Variable '%s' is const.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                if (tableSet(&vm.globals, name, peek(0))) {
-                    tableDelete(&vm.globals, name);
-                    runtimeError("Undefined variable '%s'", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                break;
-            }
-            case OP_SET_GLOBAL_LONG: {
-                uint32_t longIndex = READ_LONG();
-                ObjString* name = AS_STRING(frame->closure->function->chunk.constants.values[longIndex]);
-                if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
-                    runtimeError("Variable '%s' is const.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                if (tableSet(&vm.globals, name, peek(0))) {
-                    tableDelete(&vm.globals, name);
-                    runtimeError("Undefined variable '%s'", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                break;
             }
 
-            case OP_ARRAY: {
-                int length = READ_BYTE();
-                // -1 because peek already returns last element so this way
-                // distance becomes -1 -(length - 1),  thus length elements from top
-                ObjArray* arr = newArray();
-                push(OBJ_VAL(arr));
 
-                for (int i = length - 1; i >= 0; i--) {
-                    if (!appendArray(arr, peek(i + 1))) {
-                        ObjString* errorType = valueTypeToString(peek(i).type);
-                        ObjString* arrType = valueTypeToString(VAL_NUMBER);
-                        runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
+            push(OBJ_VAL(dict));
+            DISPATCH();
+        }
+        DO_OP_GET_ELEMENT: {
+            int slot = READ_BYTE();
+            Value elementIndex = pop();
+            Value value;
+
+            if (!isIterable(frame->slots[slot])) {
+                runtimeError("Value must be of indexeable type");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            switch (AS_OBJ(frame->slots[slot])->type) {
+                case OBJ_ARRAY: {
+                    if (!IS_NUMBER(elementIndex)) {
+                        runtimeError("Indexing expression must evaluate to positive integer for arrays");
                         return INTERPRET_RUNTIME_ERROR;
                     }
+
+                    ObjArray* arr = AS_ARRAY(frame->slots[slot]);
+                    int index = AS_NUMBER(elementIndex);
+
+                    if (!arrayGet(arr, index, &value)) {
+                        ObjString* name = valueTypeToString(arr->type);
+                        runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
+                        // goto endBranch;
+                    }
+
+                    break;
                 }
-
-                // pop();
-
-                for (int i = length; i >= 0; i--) {
+                case OBJ_DICTIONARY: {
+                    ObjDictionary* dict = AS_MAP(frame->slots[slot]);
+                    push(OBJ_VAL(dict));
+                    ObjString* key = valueToString(elementIndex);
                     pop();
-                }
-
-                push(OBJ_VAL(arr));
-                break;
-            }
-            case OP_ARRAY_LONG: {
-                int length = READ_LONG();
-                // -1 because peek already returns last element so this way
-                // distance becomes -1 -(length - 1),  thus length elements from top
-                ObjArray* arr = newArray();
-                push(OBJ_VAL(arr));
-
-                for (int i = length - 1; i >= 0; i--) {
-                    if (!appendArray(arr, peek(i + 1))) {
-                        ObjString* errorType = valueTypeToString(peek(i).type);
-                        ObjString* arrType = valueTypeToString(VAL_NUMBER);
-                        runtimeError("Expected a value of type %s but tried to append %s", arrType->chars, errorType->chars);
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                }
-
-                pop();
-
-                for (int i = length - 1; i >= 0; i--) {
-                    pop();
-                }
-
-                push(OBJ_VAL(arr));
-                break;
-            }
-            case OP_MAP: {
-                int count = READ_BYTE();
-                ObjDictionary* dict = newDictionary();
-                push(OBJ_VAL(dict));
-
-                for (int i = count; i > 0; i -= 2) {
-                    ObjString* key = valueToString(peek(i));
-                    Value elem = peek(i - 1);
-
-                    if (tableSet(&dict->map, key, elem)) {
-                        Entry curr = {.key = key, .value = elem};
-                        writeEntryList(&dict->entries, curr);
-                    }
-
-                    markDirty((Obj*)dict);
-                }
-
-                for (int i = 0; i < count; i++) {
-                    pop();
-                }
-
-                pop();
-                push(OBJ_VAL(dict));
-                break;
-            }
-            case OP_MAP_LONG: {
-                uint32_t count = READ_LONG();
-                ObjDictionary* dict = newDictionary();
-                push(OBJ_VAL(dict));
-
-                for (int i = count; i > 0; i -= 2) {
-                    ObjString* key = valueToString(peek(i));
-                    Value elem = peek(i - 1);
-
-                    if (tableSet(&dict->map, key, elem)) {
-                        Entry curr = {.key = key, .value = elem};
-                        writeEntryList(&dict->entries, curr);
-                    }
-
-                    markDirty((Obj*)dict);
-                }
-
-                pop();
-
-                for (int i = 0; i < count; i++) {
-                    pop();
-                }
-
-
-                push(OBJ_VAL(dict));
-                break;
-            }
-            case OP_GET_ELEMENT: {
-                int slot = READ_BYTE();
-                Value elementIndex = pop();
-                Value value;
-
-                if (!isIterable(frame->slots[slot])) {
-                    runtimeError("Value must be of indexeable type");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                switch (AS_OBJ(frame->slots[slot])->type) {
-                    case OBJ_ARRAY: {
-                        if (!IS_NUMBER(elementIndex)) {
-                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        ObjArray* arr = AS_ARRAY(frame->slots[slot]);
-                        int index = AS_NUMBER(elementIndex);
-
-                        if (!arrayGet(arr, index, &value)) {
-                            ObjString* name = valueTypeToString(arr->type);
-                            runtimeError("Error in getting element %g of array. Array type is %s", index, name->chars);
-                            // goto endBranch;
-                        }
-
-                        break;
-                    }
-                    case OBJ_DICTIONARY: {
-                        ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                        push(OBJ_VAL(dict));
-                        ObjString* key = valueToString(elementIndex);
-                        pop();
-
-                        if (!tableGet(&dict->map, key, &value)) {
-                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
-                            // goto endBranch;
-                        }
-
-                        break;
-                    }
-                }
-
-                // endBranch:
-                // value = NIL_VAL;
-
-                push(value);
-                break;
-            }
-            case OP_SET_ELEMENT: {
-                int slot = READ_BYTE();
-                Value setVal = pop();
-                Value elementIndex = pop();
-
-                if (!isIterable(frame->slots[slot])) {
-                    runtimeError("Value must be of indexeable type");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                switch (AS_OBJ(frame->slots[slot])->type) {
-                    case OBJ_ARRAY: {
-                        if (!IS_NUMBER(elementIndex)) {
-                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        ObjArray* arr = AS_ARRAY(frame->slots[slot]);
-                        int index = AS_NUMBER(elementIndex);
-
-                        if (!arraySet(arr, index, setVal)) {
-                            ObjString* name = valueTypeToString(arr->type);
-                            runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        markDirty((Obj*)arr);
-                        break;
-                    }
-                    case OBJ_DICTIONARY: {
-                        if (!IS_STRING(elementIndex)) {
-                            runtimeError("Indexing expression must evaluate to string for maps");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        ObjDictionary* dict = AS_MAP(frame->slots[slot]);
-                        ObjString* key = AS_STRING(elementIndex);
-
-                        if (tableSet(&dict->map, key, setVal)) {
-                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        markDirty((Obj*)dict);
-                        break;
-                    }
-
-                }
-
-                push(setVal);
-                break;
-            }
-
-            case OP_GET_ELEMENT_GLOBAL: {
-                ObjString* name = READ_STRING();
-                Value elementIndex = pop();
-                Value arr;
-
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Array index must evaluate to positive integer.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                if(!tableGet(&vm.globals, name, &arr)) {
-                    runtimeError("Undefined variable '%s' .", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                if (IS_STRING(elementIndex)) {
-                    if (!IS_MAP(arr)) {
-                        runtimeError("Element must be a dictionary");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                    ObjDictionary* dict = AS_MAP(arr);
-                    ObjString* key = AS_STRING(elementIndex);
-                    Value value;
 
                     if (!tableGet(&dict->map, key, &value)) {
-                        runtimeError("Key not found");
-                        return INTERPRET_RUNTIME_ERROR;
+                        runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                        // goto endBranch;
                     }
 
-                    push(value);
                     break;
                 }
-
-                if (!IS_ARRAY(arr)) {
-                    runtimeError("Indexed variable is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjArray* cachedArr = AS_ARRAY(arr);
-                Value element;
-                if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
-                    runtimeError("Index out of bounds.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                push(element);
-                break;
             }
-            case OP_SET_ELEMENT_GLOBAL: {
-                ObjString* name = READ_STRING();
-                Value setValue = pop();
-                Value elementIndex = peek(0);
-                Value arr;
 
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Array index expression must evaluate to positive integer.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            // endBranch:
+            // value = NIL_VAL;
 
-                if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
-                    runtimeError("Variable '%s' is const.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            push(value);
+            DISPATCH();
+        }
+        DO_OP_SET_ELEMENT: {
+            int slot = READ_BYTE();
+            Value setVal = pop();
+            Value elementIndex = pop();
 
-                if (!tableGet(&vm.globals, name, &arr)) {
-                    runtimeError("Variable '%s' is not defined", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            if (!isIterable(frame->slots[slot])) {
+                runtimeError("Value must be of indexeable type");
+                return INTERPRET_RUNTIME_ERROR;
+            }
 
-                if (IS_STRING(elementIndex)) {
-                    if (!IS_MAP(arr)) {
-                        runtimeError("Element must be a dictionary");
+            switch (AS_OBJ(frame->slots[slot])->type) {
+                case OBJ_ARRAY: {
+                    if (!IS_NUMBER(elementIndex)) {
+                        runtimeError("Indexing expression must evaluate to positive integer for arrays");
                         return INTERPRET_RUNTIME_ERROR;
                     }
-                    ObjDictionary* dict = AS_MAP(arr);
+
+                    ObjArray* arr = AS_ARRAY(frame->slots[slot]);
+                    int index = AS_NUMBER(elementIndex);
+
+                    if (!arraySet(arr, index, setVal)) {
+                        ObjString* name = valueTypeToString(arr->type);
+                        runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    markDirty((Obj*)arr);
+                    break;
+                }
+                case OBJ_DICTIONARY: {
+                    if (!IS_STRING(elementIndex)) {
+                        runtimeError("Indexing expression must evaluate to string for maps");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    ObjDictionary* dict = AS_MAP(frame->slots[slot]);
                     ObjString* key = AS_STRING(elementIndex);
 
-                    Value value;
-                    if (tableSet(&dict->map, key, setValue)) {
-                        runtimeError("'%s' doesn't exist in this dictionary", key->chars);
+                    if (tableSet(&dict->map, key, setVal)) {
+                        runtimeError("Key '%s' not found in dictionary\n", key->chars);
                         return INTERPRET_RUNTIME_ERROR;
                     }
 
-                    push(value);
+                    markDirty((Obj*)dict);
                     break;
                 }
 
-                if (!IS_ARRAY(arr)) {
-                    runtimeError("Indexed variable is not an array");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjArray* cachedArray = AS_ARRAY(arr);
-
-                if (!arraySet(cachedArray, AS_NUMBER(elementIndex), setValue)) {
-                    ObjString* name = valueTypeToString(cachedArray->type);
-                    runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                break;
-
             }
-            case OP_FOR_EACH: {
-                int arg = READ_BYTE();
-                Value iterable = pop();
-                Value item;
-                int count = (int)AS_NUMBER(frame->slots[arg]);
 
-                if (!isIterable(iterable)) {
-                    runtimeError("Object is not iterable");
+            push(setVal);
+            DISPATCH();
+        }
+
+        DO_OP_GET_ELEMENT_GLOBAL: {
+            ObjString* name = READ_STRING();
+            Value elementIndex = pop();
+            Value arr;
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Array index must evaluate to positive integer.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if(!tableGet(&vm.globals, name, &arr)) {
+                runtimeError("Undefined variable '%s' .", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (IS_STRING(elementIndex)) {
+                if (!IS_MAP(arr)) {
+                    runtimeError("Element must be a dictionary");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjDictionary* dict = AS_MAP(arr);
+                ObjString* key = AS_STRING(elementIndex);
+                Value value;
+
+                if (!tableGet(&dict->map, key, &value)) {
+                    runtimeError("Key not found");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                switch (AS_OBJ(iterable)->type) {
-                    case OBJ_ARRAY: {
-                        if (count >= AS_ARRAY(iterable)->values.count) {
-                            push(NUMBER_VAL(AS_ARRAY(iterable)->values.count));
-                            break;
-                        }
+                push(value);
+                DISPATCH();
+            }
 
-                        item = AS_ARRAY(iterable)->values.values[count];
-                        frame->slots[arg - 1] = item;
-                        frame->slots[arg] = NUMBER_VAL(count);
+            if (!IS_ARRAY(arr)) {
+                runtimeError("Indexed variable is not an array");
+                return INTERPRET_RUNTIME_ERROR;
+            }
 
+            ObjArray* cachedArr = AS_ARRAY(arr);
+            Value element;
+            if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
+                runtimeError("Index out of bounds.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            push(element);
+            DISPATCH();
+        }
+        DO_OP_GET_ELEMENT_GLOBAL_LONG: {
+            ObjString* name = READ_STRING_LONG();
+            Value elementIndex = pop();
+            Value arr;
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Array index must evaluate to positive integer.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if(!tableGet(&vm.globals, name, &arr)) {
+                runtimeError("Undefined variable '%s' .", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (IS_STRING(elementIndex)) {
+                if (!IS_MAP(arr)) {
+                    runtimeError("Element must be a dictionary");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjDictionary* dict = AS_MAP(arr);
+                ObjString* key = AS_STRING(elementIndex);
+                Value value;
+
+                if (!tableGet(&dict->map, key, &value)) {
+                    runtimeError("Key not found");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                push(value);
+                DISPATCH();
+            }
+
+            if (!IS_ARRAY(arr)) {
+                runtimeError("Indexed variable is not an array");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            ObjArray* cachedArr = AS_ARRAY(arr);
+            Value element;
+            if (!arrayGet(cachedArr, AS_NUMBER(elementIndex), &element)){
+                runtimeError("Index out of bounds.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            push(element);
+            DISPATCH();
+        }
+        DO_OP_SET_ELEMENT_GLOBAL: {
+            ObjString* name = READ_STRING();
+            Value setValue = pop();
+            Value elementIndex = peek(0);
+            Value arr;
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Array index expression must evaluate to positive integer.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
+                runtimeError("Variable '%s' is const.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (!tableGet(&vm.globals, name, &arr)) {
+                runtimeError("Variable '%s' is not defined", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (IS_STRING(elementIndex)) {
+                if (!IS_MAP(arr)) {
+                    runtimeError("Element must be a dictionary");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjDictionary* dict = AS_MAP(arr);
+                ObjString* key = AS_STRING(elementIndex);
+
+                Value value;
+                if (tableSet(&dict->map, key, setValue)) {
+                    runtimeError("'%s' doesn't exist in this dictionary", key->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                push(value);
+                DISPATCH();
+            }
+
+            if (!IS_ARRAY(arr)) {
+                runtimeError("Indexed variable is not an array");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            ObjArray* cachedArray = AS_ARRAY(arr);
+
+            if (!arraySet(cachedArray, AS_NUMBER(elementIndex), setValue)) {
+                ObjString* name = valueTypeToString(cachedArray->type);
+                runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            DISPATCH();
+
+        }
+        DO_OP_SET_ELEMENT_GLOBAL_LONG: {
+            ObjString* name = READ_STRING_LONG();
+            Value setValue = pop();
+            Value elementIndex = peek(0);
+            Value arr;
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Array index expression must evaluate to positive integer.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (tableFindString(&vm.constGlobals, name->chars, name->length, name->hash)) {
+                runtimeError("Variable '%s' is const.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (!tableGet(&vm.globals, name, &arr)) {
+                runtimeError("Variable '%s' is not defined", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (IS_STRING(elementIndex)) {
+                if (!IS_MAP(arr)) {
+                    runtimeError("Element must be a dictionary");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjDictionary* dict = AS_MAP(arr);
+                ObjString* key = AS_STRING(elementIndex);
+
+                Value value;
+                if (tableSet(&dict->map, key, setValue)) {
+                    runtimeError("'%s' doesn't exist in this dictionary", key->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                push(value);
+                DISPATCH();
+            }
+
+            if (!IS_ARRAY(arr)) {
+                runtimeError("Indexed variable is not an array");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            ObjArray* cachedArray = AS_ARRAY(arr);
+
+            if (!arraySet(cachedArray, AS_NUMBER(elementIndex), setValue)) {
+                ObjString* name = valueTypeToString(cachedArray->type);
+                runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            DISPATCH();
+
+        }
+        DO_OP_FOR_EACH: {
+            int arg = READ_BYTE();
+            Value iterable = pop();
+            Value item;
+            int count = (int)AS_NUMBER(frame->slots[arg]);
+
+            if (!isIterable(iterable)) {
+                runtimeError("Object is not iterable");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            switch (AS_OBJ(iterable)->type) {
+                case OBJ_ARRAY: {
+                    if (count >= AS_ARRAY(iterable)->values.count) {
                         push(NUMBER_VAL(AS_ARRAY(iterable)->values.count));
                         break;
                     }
-                    case OBJ_DICTIONARY: {
-                        if (count >= AS_MAP(iterable)->map.count) {
-                            push(NUMBER_VAL(AS_MAP(iterable)->map.count));
-                            break;
-                        }
 
-                        item = OBJ_VAL(AS_MAP(iterable)->entries.entries[count].key);
-                        frame->slots[arg - 1] = item;
-                        frame->slots[arg] = NUMBER_VAL(count);
+                    item = AS_ARRAY(iterable)->values.values[count];
+                    frame->slots[arg - 1] = item;
+                    frame->slots[arg] = NUMBER_VAL(count);
 
+                    push(NUMBER_VAL(AS_ARRAY(iterable)->values.count));
+                    break;
+                }
+                case OBJ_DICTIONARY: {
+                    if (count >= AS_MAP(iterable)->map.count) {
                         push(NUMBER_VAL(AS_MAP(iterable)->map.count));
                         break;
                     }
-                    case OBJ_RANGE: {
-                        if (count >= AS_RANGE(iterable)->end) {
-                            push(NUMBER_VAL(AS_RANGE(iterable)->end));
-                            break;
-                        }
 
-                        item = NUMBER_VAL(AS_RANGE(iterable)->current++);
-                        frame->slots[arg - 1] = item;
-                        frame->slots[arg] = NUMBER_VAL(count);
+                    item = OBJ_VAL(AS_MAP(iterable)->entries.entries[count].key);
+                    frame->slots[arg - 1] = item;
+                    frame->slots[arg] = NUMBER_VAL(count);
 
-                        push(NUMBER_VAL(AS_RANGE(iterable)->current));
-                        break;
-                    }
-                    default:
-                    // unreacheable
-                    runtimeError("Fatal error: unreacheable branch");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                break;
-            }
-            case OP_EQUAL: {
-                Value b = pop();
-                Value a = pop();
-
-                push(BOOL_VAL(valuesEqual(a, b)));
-                break;
-            }
-            case OP_EQUAL_AND: {
-                Value b = pop();
-                Value a = pop();
-                if (IS_BOOL(a) && IS_BOOL(b)) {
-                    bool first = AS_BOOL(b);
-                    bool second = AS_BOOL(a);
-                    push(BOOL_VAL(first & second));
+                    push(NUMBER_VAL(AS_MAP(iterable)->map.count));
                     break;
                 }
+                case OBJ_RANGE: {
+                    if (count >= AS_RANGE(iterable)->end) {
+                        push(NUMBER_VAL(AS_RANGE(iterable)->end));
+                        break;
+                    }
 
-                push(BOOL_VAL(valuesEqual(a, b)));
-                break;
+                    item = NUMBER_VAL(AS_RANGE(iterable)->current++);
+                    frame->slots[arg - 1] = item;
+                    frame->slots[arg] = NUMBER_VAL(count);
+
+                    push(NUMBER_VAL(AS_RANGE(iterable)->current));
+                    break;
+                }
+                default:
+                // unreacheable
+                runtimeError("Fatal error: unreacheable branch");
+                return INTERPRET_RUNTIME_ERROR;
             }
-            case OP_ADD: {
-                if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
-                    double b = AS_NUMBER(pop());
-                    double a = AS_NUMBER(pop());
-                    push(NUMBER_VAL(a + b));
-                } else {
-                    concatenate();
-                }
-                break;
+
+            DISPATCH();
+        }
+        DO_OP_EQUAL: {
+            Value b = pop();
+            Value a = pop();
+
+            push(BOOL_VAL(valuesEqual(a, b)));
+            DISPATCH();
+        }
+        DO_OP_EQUAL_AND: {
+            Value b = pop();
+            Value a = pop();
+            if (IS_BOOL(a) && IS_BOOL(b)) {
+                bool first = AS_BOOL(b);
+                bool second = AS_BOOL(a);
+                push(BOOL_VAL(first & second));
+                DISPATCH();
             }
-            case OP_SUBTRACT:
-                BINARY_OP(NUMBER_VAL, -);
-                break;
-            case OP_MULTIPLY:
-                BINARY_OP(NUMBER_VAL, *);
-                break;
-            case OP_DIVIDE:
-                BINARY_OP(NUMBER_VAL, /);
-                break;
-            case OP_NOT:
-                push(BOOL_VAL(isFalsey(pop())));
-                break;
-            case OP_NEGATE:
-                if (!IS_NUMBER(peek(0))) {
-                    runtimeError(("Operand must be a number."));
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                push(NUMBER_VAL(-AS_NUMBER(pop())));
-                break;
-            case OP_LESS:
-                BINARY_OP(BOOL_VAL, <);
-                break;
-            case OP_GREATER:
-                BINARY_OP(BOOL_VAL, >);
-                break;
-            case OP_PRINT:
-                printValue(pop());
-                printf("\n");
-                break;
-            case OP_CALL: {
-                int argCount = READ_BYTE();
-                // printValue(peek(argCount));
-                // printf("\n");
-                // if (isBuiltIn(peek(argCount))) argCount++;
-                // printf("argc: %d\n", argCount);
-                if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
-                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                break;
+
+            push(BOOL_VAL(valuesEqual(a, b)));
+            DISPATCH();
+        }
+        DO_OP_ADD: {
+            if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
+                double b = AS_NUMBER(pop());
+                double a = AS_NUMBER(pop());
+                push(NUMBER_VAL(a + b));
+            } else {
+                concatenate();
             }
-            case OP_ARRAY_CALL: {
-                int argCount = READ_BYTE();
+            DISPATCH();
+        }
+        DO_OP_SUBTRACT:
+            BINARY_OP(NUMBER_VAL, -);
+            DISPATCH();
+        DO_OP_MULTIPLY:
+            BINARY_OP(NUMBER_VAL, *);
+            DISPATCH();
+        DO_OP_DIVIDE:
+            BINARY_OP(NUMBER_VAL, /);
+            DISPATCH();
+        DO_OP_NOT:
+            push(BOOL_VAL(isFalsey(pop())));
+            DISPATCH();
+        DO_OP_NEGATE:
+            if (!IS_NUMBER(peek(0))) {
+                runtimeError(("Operand must be a number."));
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            push(NUMBER_VAL(-AS_NUMBER(pop())));
+            DISPATCH();
+        DO_OP_LESS:
+            BINARY_OP(BOOL_VAL, <);
+            DISPATCH();
+        DO_OP_GREATER:
+            BINARY_OP(BOOL_VAL, >);
+            DISPATCH();
+        DO_OP_PRINT:
+            printValue(pop());
+            printf("\n");
+            DISPATCH();
+        DO_OP_CALL: {
+            int argCount = READ_BYTE();
+            // printValue(peek(argCount));
+            // printf("\n");
+            // if (isBuiltIn(peek(argCount))) argCount++;
+            // printf("argc: %d\n", argCount);
+            if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
+            frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+            DISPATCH();
+        }
+        DO_OP_ARRAY_CALL: {
+            int argCount = READ_BYTE();
 
-                Value elementIndex = pop();
-                Value element;
+            Value elementIndex = pop();
+            Value element;
 
-                if (!IS_NUMBER(elementIndex)) {
-                    runtimeError("Array index expression must evaluate to positive integer.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            if (!IS_NUMBER(elementIndex)) {
+                runtimeError("Array index expression must evaluate to positive integer.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
 
-                if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
+            if (!callValue(peek(argCount), argCount)) return INTERPRET_RUNTIME_ERROR;
 
-                if (!IS_ARRAY(peek(0))) {
-                    runtimeError("Return value is not an array.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            if (!IS_ARRAY(peek(0))) {
+                runtimeError("Return value is not an array.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
 
-                if (!arrayGet(AS_ARRAY(pop()), AS_NUMBER(elementIndex), &element)){
+            if (!arrayGet(AS_ARRAY(pop()), AS_NUMBER(elementIndex), &element)){
+                runtimeError("Index out of bounds.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+            push(element);
+
+            DISPATCH();
+        }
+        DO_OP_GET_UPVALUE: {
+            int index = READ_BYTE();
+            push(*frame->closure->upvalues[index]->location);
+            DISPATCH();
+
+        }
+        DO_OP_SET_UPVALUE: {
+            int index = READ_BYTE();
+            ObjUpvalue* upval = frame->closure->upvalues[index];
+            *upval->location = peek(0);
+            markDirty((Obj*)upval);
+            DISPATCH();
+        }
+        DO_OP_GET_ELEMENT_UPVALUE: {
+            printf("Entering get\n");
+            int index = READ_BYTE();
+            Value elementIndex = pop();
+            Value dataStruct = *frame->closure->upvalues[index]->location;
+            push(dataStruct);
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (!IS_ARRAY(dataStruct)
+                    && !IS_MAP(dataStruct)) {
+                runtimeError("Indexed element is not an array or dictionary");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            Value element;
+            if (IS_ARRAY(dataStruct)) {
+                if (!arrayGet(AS_ARRAY(dataStruct), AS_NUMBER(elementIndex), &element)){
                     runtimeError("Index out of bounds.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-
-                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                push(element);
-
-                break;
-            }
-            case OP_GET_UPVALUE: {
-                int index = READ_BYTE();
-                push(*frame->closure->upvalues[index]->location);
-                break;
-
-            }
-            case OP_SET_UPVALUE: {
-                int index = READ_BYTE();
-                ObjUpvalue* upval = frame->closure->upvalues[index];
-                *upval->location = peek(0);
-                markDirty((Obj*)upval);
-                break;
-            }
-            case OP_GET_ELEMENT_UPVALUE: {
-                printf("Entering get\n");
-                int index = READ_BYTE();
-                Value elementIndex = pop();
-                Value dataStruct = *frame->closure->upvalues[index]->location;
-                push(dataStruct);
-
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
+            } else {
+                if (!tableGet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), &element)) {
+                    runtimeError("Key not found");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-
-                if (!IS_ARRAY(dataStruct)
-                        && !IS_MAP(dataStruct)) {
-                    runtimeError("Indexed element is not an array or dictionary");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                Value element;
-                if (IS_ARRAY(dataStruct)) {
-                    if (!arrayGet(AS_ARRAY(dataStruct), AS_NUMBER(elementIndex), &element)){
-                        runtimeError("Index out of bounds.");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                } else {
-                    if (!tableGet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), &element)) {
-                        runtimeError("Key not found");
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                }
-
-                pop();
-                push(element);
-                break;
-
             }
-            case OP_SET_ELEMENT_UPVALUE: {
-                printf("Entering set\n");
-                int index = READ_BYTE();
-                Value setValue = pop();
-                Value elementIndex = pop();
-                Value dataStruct = *frame->closure->upvalues[index]->location;
-                push(dataStruct);
 
-                if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
-                    runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
+            pop();
+            push(element);
+            DISPATCH();
 
-                if (!IS_ARRAY(dataStruct)
-                        && !IS_MAP(dataStruct)) {
-                    runtimeError("Indexed element is not an array or dictionary");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                if (IS_ARRAY(dataStruct)) {
-                    if (!arraySet(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
-                        ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
-                        runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), type->chars);
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                } else {
-                    if (!tableSet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), setValue)) {
-                        ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
-                        runtimeError("Error in setting entry %s, elem of type %s of map", AS_STRING(elementIndex), type->chars);
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                }
-
-                pop();
-                break;
-            }
-            case OP_GET_ELEMENT_FROM_TOP: {
-                Value elem;
-                Obj* dataStruct = AS_OBJ(peek(0));
-                Value elemIndex = peek(1);
-
-                //printValue(elemIndex);
-
-                switch (dataStruct->type) {
-                    case OBJ_ARRAY: {
-                        if (elemIndex.type != VAL_NUMBER) {
-                            runtimeError("Index must evaluate to positive integer for arrays");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-                        if (!arrayGet(AS_ARRAY((peek(0))), AS_NUMBER(elemIndex), &elem)) {
-                            runtimeError("Error in getting element from array");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        break;
-                    }
-                    case OBJ_DICTIONARY: {
-                        if (!IS_STRING(elemIndex)) {
-                            runtimeError("Index must evaluate to string for dictionaries");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-                        if (!tableGet(&AS_MAP(peek(0))->map, AS_STRING(elemIndex), &elem)) {
-                            runtimeError("Value not found");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        break;
-                    }
-
-
-                    default:
-                    runtimeError("Value must be an addressable type");
-                    return INTERPRET_COMPILE_ERROR;
-                }
-
-                pop();
-                pop();
-                push(elem);
-
-                break;
-            }
-            case OP_SWAP: {
-                int a = READ_BYTE();
-                int b = READ_BYTE();
-                Value* first = vm.stackTop - 1 - a;
-                Value* second = vm.stackTop - 1 - b;
-                Value temp = *first;
-
-                *first = *second;
-                *second = temp;
-                break;
-            }
-            case OP_SAVE_VALUE: {
-                push(peek(0));
-                break;
-            }
-            case OP_PUSH: {
-                int arg = READ_BYTE();
-                push(frame->slots[arg]);
-                break;
-            }
-            case OP_REVERSE_N: {
-                int n = READ_BYTE();
-                Value values[n];
-                printf("n: %d\n", n);
-                for (int i = 0; i < n; i++) {
-                    values[i] = pop();
-                    // printValue(values[i]);
-                }
-
-                for (int i = 0; i < n; i++) {
-                    push(values[i]);
-                }
-
-                break;
-            }
-            case OP_QUEUE: {
-                if (!queue(&vm.queue[vm.nestingLevel])) {
-                    runtimeError("Error in queueing value");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                break;
-            }
-            case OP_DEQUE: {
-                // if (vm.lastIn[vm.nestingLevel] > vm.queue[vm.nestingLevel].count) {
-                //     runtimeError("Last element of queue is outside bounds");
-                //     return INTERPRET_RUNTIME_ERROR;
-                // }
-
-                // printValue(vm.queue[vm.nestingLevel].values[vm.lastIn[vm.nestingLevel]]);
-                Value value;
-                if (!deque(&vm.queue[vm.nestingLevel], &value)) {
-                    runtimeError("Nesting level below zero");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                push(value);
-                break;
-            }
-            case OP_QUEUE_REWIND: {
-                vm.queue[vm.nestingLevel].count++;
-                // printf("rewinded\n");
-                break;
-            }
-            case OP_QUEUE_ADVANCE: {
-                vm.queue[vm.nestingLevel].count--;
-                break;
-            }
-            case OP_QUEUE_CLEAR: {
-                // vm.lastIn[vm.nestingLevel] = 0;
-                vm.queueCount[vm.nestingLevel] = 0;
-                initValueArray(&vm.queue[vm.nestingLevel--]);
-
-                if (vm.nestingLevel < 0) vm.nestingLevel++;
-                break;
-            }
-            case OP_INCREMENT_NESTING_LVL: {
-                if (vm.nestingLevel == MAX_NESTING_LVL) {
-                    runtimeError("Max nesting level is 64");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                // printf("Incremented nesting lvl\n");
-                initValueArray(&vm.queue[++vm.nestingLevel]);
-                break;
-            }
-            case OP_DECREMENT_NESTING_LVL: {
-                if (vm.nestingLevel <= 0) {
-                    runtimeError("Error: nesting level below zero");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                initValueArray(&vm.queue[vm.nestingLevel--]);
-                break;
-            }
-            case OP_INDIRECT_STORE: {
-                Value setVal = pop();
-                Value refObj = pop();
-                Value refIndex = pop();
-
-                if (!isIterable(refObj)) {
-                    runtimeError("Value must be of indexeable type");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                switch (AS_OBJ(refObj)->type) {
-                    case OBJ_ARRAY: {
-                        if (!IS_NUMBER(refIndex)) {
-                            runtimeError("Indexing expression must evaluate to positive integer for arrays");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        ObjArray* arr = AS_ARRAY(refObj);
-                        int index = AS_NUMBER(refIndex);
-
-                        if (!arraySet(arr, index, setVal)) {
-                            ObjString* name = valueTypeToString(arr->type);
-                            runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        break;
-                    }
-                    case OBJ_DICTIONARY: {
-                        if (!IS_STRING(refIndex)) {
-                            runtimeError("Indexing expression must evaluate to string for maps");
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-
-                        ObjDictionary* dict = AS_MAP(refObj);
-                        ObjString* key = AS_STRING(refIndex);
-
-                        if (tableSet(&dict->map, key, setVal)) {
-                            runtimeError("Key '%s' not found in dictionary\n", key->chars);
-                            return INTERPRET_RUNTIME_ERROR;
-                        }
-                        break;
-                    }
-
-                }
-
-                push(setVal);
-                break;
-            }
-            case OP_CHECK_TYPE: {
-                ValueType type = READ_BYTE();
-                if (peek(0).type != type) {
-                    ObjString* valueType = valueTypeToString(type);
-                    runtimeError("Expected value of type '%s'", valueType->chars);
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                break;
-            }
-            case OP_PUSH_FROM: {
-                int slot = READ_BYTE();
-                push(peek(slot));
-                break;
-            }
-            case OP_RANGE: {
-                double end = AS_NUMBER(pop());
-                double start = AS_NUMBER(pop());
-                ObjRange* range = newRange(start, end);
-
-                push(OBJ_VAL(range));
-                break;
-            }
-            case OP_CLOSE_UPVALUE: {
-                closeUpvalues(vm.stackTop - 1);
-                pop();
-                break;
-            }
-            case OP_CLOSURE: {
-                ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
-                push(OBJ_VAL(function));
-                ObjClosure* closure = newClosure(function);
-                pop();
-                push(OBJ_VAL(closure));
-
-                for (int i = 0; i < closure->function->upvalueCount; i++) {
-                    bool isLocal = READ_BYTE();
-                    int index = READ_BYTE();
-
-                    if (isLocal) {
-                        closure->upvalues[i] = captureUpvalue(frame->slots + index);
-                    } else {
-                        closure->upvalues[i] = frame->closure->upvalues[index];
-                    }
-                }
-                break;
-            }
-            case OP_CLOSURE_LONG: {
-                ObjFunction* function = AS_FUNCTION(READ_CONSTANT_LONG());
-                push(OBJ_VAL(function));
-                ObjClosure* closure = newClosure(function);
-                pop();
-                push(OBJ_VAL(closure));
-
-                for (int i = 0; i < closure->function->upvalueCount; i++) {
-                    bool isLocal = READ_BYTE();
-                    int index = READ_BYTE();
-
-                    if (isLocal) {
-                        closure->upvalues[i] = captureUpvalue(frame->slots + index);
-                    } else {
-                        closure->upvalues[i] = frame->closure->upvalues[index];
-                    }
-                }
-                break;
-            }
-            case OP_RETURN:
-                Value rv = pop();
-                closeUpvalues(frame->slots);
-
-                vm.frameArray.count--;
-                if (vm.frameArray.count == 0 ) {
-                    pop();
-                    return INTERPRET_OK;
-                }
-
-                vm.stackTop = frame->slots;
-                push(rv);
-
-                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                break;
-            case OP_CLASS: {
-                ObjString* name = READ_STRING();
-                push(OBJ_VAL(name));
-                ObjClass* klass = newClass(name);
-                pop();
-                push(OBJ_VAL(klass));
-                break;
-            }
-            case OP_CLASS_LONG: {
-                ObjString* name = READ_STRING_LONG();
-                push(OBJ_VAL(name));
-                ObjClass* klass = newClass(name);
-                pop();
-                push(OBJ_VAL(klass));
-                break;
-            }
-            case OP_GET_PROPERTY: {
-                ObjString* name = READ_STRING();
-
-                if (IS_INSTANCE(peek(0))) {
-                    ObjInstance* instance = AS_INSTANCE(peek(0));
-
-                    Value value;
-                    if (tableGet(&instance->fields, name, &value)) {
-                        pop();
-                        push(value);
-                        break;
-                    }
-
-                    // debugMethodLookup(instance->klass, name);
-                    if (!bindMethod(instance->klass, name)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                    break;
-                }
-
-                ObjClass* nativeClass = NULL;
-                if (isBuiltInAndSet(peek(0), &nativeClass)) {
-#ifdef DEBUG_LOG_GC
-                    debugMethodLookup(nativeClass, name);
-#endif
-                if (!bindNativeMethod(nativeClass, name)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                    break;
-                }
-
-                runtimeError("Only instances can have properties");
-                return INTERPRET_RUNTIME_ERROR;
-
-            }
-            case OP_GET_PROPERTY_LONG: {
-                ObjString* name = READ_STRING_LONG();
-
-                if (IS_INSTANCE(peek(0))) {
-                    ObjInstance* instance = AS_INSTANCE(peek(0));
-
-                    Value value;
-                    if (tableGet(&instance->fields, name, &value)) {
-                        pop();
-                        push(value);
-                        break;
-                    }
-
-                    // debugMethodLookup(instance->klass, name);
-                    if (!bindMethod(instance->klass, name)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                    break;
-                }
-
-                ObjClass* nativeClass = NULL;
-                if (isBuiltInAndSet(peek(0), &nativeClass)) {
-#ifdef DEBUG_LOG_GC
-                    debugMethodLookup(nativeClass, name);
-#endif
-                if (!bindNativeMethod(nativeClass, name)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                    break;
-                }
-
-                runtimeError("Only instances can have properties");
-                return INTERPRET_RUNTIME_ERROR;
-
-            }
-            case OP_SET_PROPERTY: {
-                if (!IS_INSTANCE(peek(1))) {
-                    runtimeError("Only instances can have properties");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjInstance* instance = AS_INSTANCE(peek(1));
-                ObjString* fieldName = READ_STRING();
-                Value constValue;
-
-                if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
-                    //  0 -> mutable
-                    // -1 -> const but has to be initialized
-                    // -2 -> const initialized
-                    if (valuesEqual(constValue, NUMBER_VAL(-1))) {
-                        tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
-                    } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
-                        runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                }
-
-                tableSet(&instance->fields, fieldName, peek(0));
-
-                markDirty((Obj*)instance);
-
-
-                // we remove the instance from the stack
-                // and leave only the property set value
-                Value value = pop();
-                pop();
-                push(value);
-                break;
-            }
-            case OP_SET_PROPERTY_LONG: {
-                if (!IS_INSTANCE(peek(1))) {
-                    runtimeError("Only instances can have properties");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-
-                ObjInstance* instance = AS_INSTANCE(peek(1));
-                ObjString* fieldName = READ_STRING_LONG();
-                Value constValue;
-
-                if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
-                    //  0 -> mutable
-                    // -1 -> const but has to be initialized
-                    // -2 -> const initialized
-                    if (valuesEqual(constValue, NUMBER_VAL(-1))) {
-                        tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
-                    } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
-                        runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                }
-
-                tableSet(&instance->fields, fieldName, peek(0));
-                markDirty((Obj*)instance);
-
-                // we remove the instance from the stack
-                // and leave only the property set value
-                Value value = pop();
-                pop();
-                push(value);
-                break;
-            }
-            case OP_METHOD:
-                defineMethod(READ_STRING());
-                break;
-            case OP_METHOD_LONG:
-                defineMethod(READ_STRING_LONG());
-                break;
-            case OP_DEFINE_PROPERTY: {
-                ObjString* name = READ_STRING();
-                bool isConst = READ_BYTE();
-                defineProperty(name, isConst);
-                break;
-            }
-            case OP_DEFINE_PROPERTY_LONG: {
-                ObjString* name = READ_STRING_LONG();
-                bool isConst = READ_BYTE();
-                defineProperty(name, isConst);
-                break;
-            }
-            case OP_INVOKE: {
-                ObjString* method = READ_STRING();
-                int argc = READ_BYTE();
-                ObjClass* nativeClass = NULL;
-                if (isBuiltInAndSet(peek(argc), &nativeClass)) {
-#ifdef DEBUG_LOG_GC
-                    // debugMethodLookup(nativeClass, method);
-#endif
-                    if (!invokeFromNative(nativeClass, method, argc)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                } else {
-                    if (!invoke(method, argc)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                    frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                }
-
-                break;
-            }
-            case OP_INVOKE_LONG: {
-                ObjString* method = READ_STRING_LONG();
-                int argc = READ_BYTE();
-                ObjClass* nativeClass = NULL;
-                if (isBuiltInAndSet(peek(argc), &nativeClass)) {
-#ifdef DEBUG_LOG_GC
-                    // debugMethodLookup(nativeClass, method);
-#endif
-                    if (!invokeFromNative(nativeClass, method, argc)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-
-                } else {
-                    if (!invoke(method, argc)) {
-                        return INTERPRET_RUNTIME_ERROR;
-                    }
-                    frame = &vm.frameArray.frames[vm.frameArray.count - 1];
-                }
-
-                break;
-            }
-            case OP_INHERIT: {
-                ObjClass* derived = AS_CLASS(pop());
-                if (!IS_CLASS(peek(0))) {
-                    runtimeError("Super must be a class");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                ObjClass* super = AS_CLASS(peek(0));
-                tableAddAll(&super->methods, &derived->methods);
-                markDirty((Obj*)derived);
-                break;
-            }
-            case OP_GET_SUPER: {
-                ObjString* name = READ_STRING();
-                ObjClass* super = AS_CLASS(pop());
-
-                if (!bindMethod(super, name)) {
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                break;
-            }
-            case OP_GET_SUPER_LONG: {
-                ObjString* name = READ_STRING_LONG();
-                ObjClass* super = AS_CLASS(pop());
-
-                if (!bindMethod(super, name)) {
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                break;
-            }
         }
+        DO_OP_SET_ELEMENT_UPVALUE: {
+            printf("Entering set\n");
+            int index = READ_BYTE();
+            Value setValue = pop();
+            Value elementIndex = pop();
+            Value dataStruct = *frame->closure->upvalues[index]->location;
+            push(dataStruct);
+
+            if (!IS_STRING(elementIndex) && !IS_NUMBER(elementIndex)) {
+                runtimeError("Index expression must evaluate to positive integer or string for dictionaries");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (!IS_ARRAY(dataStruct)
+                    && !IS_MAP(dataStruct)) {
+                runtimeError("Indexed element is not an array or dictionary");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            if (IS_ARRAY(dataStruct)) {
+                if (!arraySet(AS_ARRAY(*frame->closure->upvalues[index]->location), AS_NUMBER(elementIndex), setValue)) {
+                    ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
+                    runtimeError("Error in setting element %g of array. Array type is %s", AS_NUMBER(elementIndex), type->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+            } else {
+                if (!tableSet(&AS_MAP(dataStruct)->map, AS_STRING(elementIndex), setValue)) {
+                    ObjString* type = valueTypeToString(AS_ARRAY(dataStruct)->type);
+                    runtimeError("Error in setting entry %s, elem of type %s of map", AS_STRING(elementIndex), type->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+            }
+
+            pop();
+            DISPATCH();
+        }
+        DO_OP_GET_ELEMENT_FROM_TOP: {
+            Value elem;
+            Obj* dataStruct = AS_OBJ(peek(0));
+            Value elemIndex = peek(1);
+
+            //printValue(elemIndex);
+
+            switch (dataStruct->type) {
+                case OBJ_ARRAY: {
+                    if (elemIndex.type != VAL_NUMBER) {
+                        runtimeError("Index must evaluate to positive integer for arrays");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    if (!arrayGet(AS_ARRAY((peek(0))), AS_NUMBER(elemIndex), &elem)) {
+                        runtimeError("Error in getting element from array");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+                case OBJ_DICTIONARY: {
+                    if (!IS_STRING(elemIndex)) {
+                        runtimeError("Index must evaluate to string for dictionaries");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    if (!tableGet(&AS_MAP(peek(0))->map, AS_STRING(elemIndex), &elem)) {
+                        runtimeError("Value not found");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+
+                default:
+                runtimeError("Value must be an addressable type");
+                return INTERPRET_COMPILE_ERROR;
+            }
+
+            pop();
+            pop();
+            push(elem);
+
+            DISPATCH();
+        }
+        DO_OP_SWAP: {
+            int a = READ_BYTE();
+            int b = READ_BYTE();
+            Value* first = vm.stackTop - 1 - a;
+            Value* second = vm.stackTop - 1 - b;
+            Value temp = *first;
+
+            *first = *second;
+            *second = temp;
+            DISPATCH();
+        }
+        DO_OP_SAVE_VALUE: {
+            push(peek(0));
+            DISPATCH();
+        }
+        DO_OP_PUSH: {
+            int arg = READ_BYTE();
+            push(frame->slots[arg]);
+            DISPATCH();
+        }
+        DO_OP_REVERSE_N: {
+            int n = READ_BYTE();
+            Value values[n];
+            printf("n: %d\n", n);
+            for (int i = 0; i < n; i++) {
+                values[i] = pop();
+                // printValue(values[i]);
+            }
+
+            for (int i = 0; i < n; i++) {
+                push(values[i]);
+            }
+
+            DISPATCH();
+        }
+        DO_OP_QUEUE: {
+            if (!queue(&vm.queue[vm.nestingLevel])) {
+                runtimeError("Error in queueing value");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            DISPATCH();
+        }
+        DO_OP_DEQUE: {
+            // if (vm.lastIn[vm.nestingLevel] > vm.queue[vm.nestingLevel].count) {
+            //     runtimeError("Last element of queue is outside bounds");
+            //     return INTERPRET_RUNTIME_ERROR;
+            // }
+
+            // printValue(vm.queue[vm.nestingLevel].values[vm.lastIn[vm.nestingLevel]]);
+            Value value;
+            if (!deque(&vm.queue[vm.nestingLevel], &value)) {
+                runtimeError("Nesting level below zero");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            push(value);
+            DISPATCH();
+        }
+        DO_OP_QUEUE_REWIND: {
+            vm.queue[vm.nestingLevel].count++;
+            // printf("rewinded\n");
+            DISPATCH();
+        }
+        DO_OP_QUEUE_ADVANCE: {
+            vm.queue[vm.nestingLevel].count--;
+            DISPATCH();
+        }
+        DO_OP_QUEUE_CLEAR: {
+            // vm.lastIn[vm.nestingLevel] = 0;
+            vm.queueCount[vm.nestingLevel] = 0;
+            initValueArray(&vm.queue[vm.nestingLevel--]);
+
+            if (vm.nestingLevel < 0) vm.nestingLevel++;
+            DISPATCH();
+        }
+        DO_OP_INCREMENT_NESTING_LVL: {
+            if (vm.nestingLevel == MAX_NESTING_LVL) {
+                runtimeError("Max nesting level is 64");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            // printf("Incremented nesting lvl\n");
+            initValueArray(&vm.queue[++vm.nestingLevel]);
+            DISPATCH();
+        }
+        DO_OP_DECREMENT_NESTING_LVL: {
+            if (vm.nestingLevel <= 0) {
+                runtimeError("Error: nesting level below zero");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            initValueArray(&vm.queue[vm.nestingLevel--]);
+            DISPATCH();
+        }
+        DO_OP_INDIRECT_STORE: {
+            Value setVal = pop();
+            Value refObj = pop();
+            Value refIndex = pop();
+
+            if (!isIterable(refObj)) {
+                runtimeError("Value must be of indexeable type");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            switch (AS_OBJ(refObj)->type) {
+                case OBJ_ARRAY: {
+                    if (!IS_NUMBER(refIndex)) {
+                        runtimeError("Indexing expression must evaluate to positive integer for arrays");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    ObjArray* arr = AS_ARRAY(refObj);
+                    int index = AS_NUMBER(refIndex);
+
+                    if (!arraySet(arr, index, setVal)) {
+                        ObjString* name = valueTypeToString(arr->type);
+                        runtimeError("Error in setting element %g of array. Array type is %s", index, name->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+                case OBJ_DICTIONARY: {
+                    if (!IS_STRING(refIndex)) {
+                        runtimeError("Indexing expression must evaluate to string for maps");
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    ObjDictionary* dict = AS_MAP(refObj);
+                    ObjString* key = AS_STRING(refIndex);
+
+                    if (tableSet(&dict->map, key, setVal)) {
+                        runtimeError("Key '%s' not found in dictionary\n", key->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    break;
+                }
+
+            }
+
+            push(setVal);
+            DISPATCH();
+        }
+        DO_OP_CHECK_TYPE: {
+            ValueType type = READ_BYTE();
+            if (peek(0).type != type) {
+                ObjString* valueType = valueTypeToString(type);
+                runtimeError("Expected value of type '%s'", valueType->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            DISPATCH();
+        }
+        DO_OP_PUSH_FROM: {
+            int slot = READ_BYTE();
+            push(peek(slot));
+            DISPATCH();
+        }
+        DO_OP_RANGE: {
+            double end = AS_NUMBER(pop());
+            double start = AS_NUMBER(pop());
+            ObjRange* range = newRange(start, end);
+
+            push(OBJ_VAL(range));
+            DISPATCH();
+        }
+        DO_OP_CLOSE_UPVALUE: {
+            closeUpvalues(vm.stackTop - 1);
+            pop();
+            DISPATCH();
+        }
+        DO_OP_CLOSURE: {
+            ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
+            push(OBJ_VAL(function));
+            ObjClosure* closure = newClosure(function);
+            pop();
+            push(OBJ_VAL(closure));
+
+            for (int i = 0; i < closure->function->upvalueCount; i++) {
+                bool isLocal = READ_BYTE();
+                int index = READ_BYTE();
+
+                if (isLocal) {
+                    closure->upvalues[i] = captureUpvalue(frame->slots + index);
+                } else {
+                    closure->upvalues[i] = frame->closure->upvalues[index];
+                }
+            }
+            DISPATCH();
+        }
+        DO_OP_CLOSURE_LONG: {
+            ObjFunction* function = AS_FUNCTION(READ_CONSTANT_LONG());
+            push(OBJ_VAL(function));
+            ObjClosure* closure = newClosure(function);
+            pop();
+            push(OBJ_VAL(closure));
+
+            for (int i = 0; i < closure->function->upvalueCount; i++) {
+                bool isLocal = READ_BYTE();
+                int index = READ_BYTE();
+
+                if (isLocal) {
+                    closure->upvalues[i] = captureUpvalue(frame->slots + index);
+                } else {
+                    closure->upvalues[i] = frame->closure->upvalues[index];
+                }
+            }
+            DISPATCH();
+        }
+        DO_OP_RETURN:
+            Value rv = pop();
+            closeUpvalues(frame->slots);
+
+            vm.frameArray.count--;
+            if (vm.frameArray.count == 0 ) {
+                pop();
+                return INTERPRET_OK;
+            }
+
+            vm.stackTop = frame->slots;
+            push(rv);
+
+            frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+            DISPATCH();
+        DO_OP_CLASS: {
+            ObjString* name = READ_STRING();
+            push(OBJ_VAL(name));
+            ObjClass* klass = newClass(name);
+            pop();
+            push(OBJ_VAL(klass));
+            DISPATCH();
+        }
+        DO_OP_CLASS_LONG: {
+            ObjString* name = READ_STRING_LONG();
+            push(OBJ_VAL(name));
+            ObjClass* klass = newClass(name);
+            pop();
+            push(OBJ_VAL(klass));
+            DISPATCH();
+        }
+        DO_OP_GET_PROPERTY: {
+            ObjString* name = READ_STRING();
+
+            if (IS_INSTANCE(peek(0))) {
+                ObjInstance* instance = AS_INSTANCE(peek(0));
+
+                Value value;
+                if (tableGet(&instance->fields, name, &value)) {
+                    pop();
+                    push(value);
+                    DISPATCH();
+                }
+
+                // debugMethodLookup(instance->klass, name);
+                if (!bindMethod(instance->klass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                DISPATCH();
+            }
+
+            ObjClass* nativeClass = NULL;
+            if (isBuiltInAndSet(peek(0), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                debugMethodLookup(nativeClass, name);
+#endif
+            if (!bindNativeMethod(nativeClass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                DISPATCH();
+            }
+
+            runtimeError("Only instances can have properties");
+            return INTERPRET_RUNTIME_ERROR;
+
+        }
+        DO_OP_GET_PROPERTY_LONG: {
+            ObjString* name = READ_STRING_LONG();
+
+            if (IS_INSTANCE(peek(0))) {
+                ObjInstance* instance = AS_INSTANCE(peek(0));
+
+                Value value;
+                if (tableGet(&instance->fields, name, &value)) {
+                    pop();
+                    push(value);
+                    DISPATCH();
+                }
+
+                // debugMethodLookup(instance->klass, name);
+                if (!bindMethod(instance->klass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                DISPATCH();
+            }
+
+            ObjClass* nativeClass = NULL;
+            if (isBuiltInAndSet(peek(0), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                debugMethodLookup(nativeClass, name);
+#endif
+            if (!bindNativeMethod(nativeClass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                DISPATCH();
+            }
+
+            runtimeError("Only instances can have properties");
+            return INTERPRET_RUNTIME_ERROR;
+
+        }
+        DO_OP_SET_PROPERTY: {
+            if (!IS_INSTANCE(peek(1))) {
+                runtimeError("Only instances can have properties");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            ObjInstance* instance = AS_INSTANCE(peek(1));
+            ObjString* fieldName = READ_STRING();
+            Value constValue;
+
+            if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
+                //  0 -> mutable
+                // -1 -> const but has to be initialized
+                // -2 -> const initialized
+                if (valuesEqual(constValue, NUMBER_VAL(-1))) {
+                    tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
+                } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
+                    runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+            }
+
+            tableSet(&instance->fields, fieldName, peek(0));
+
+            markDirty((Obj*)instance);
+
+
+            // we remove the instance from the stack
+            // and leave only the property set value
+            Value value = pop();
+            pop();
+            push(value);
+            DISPATCH();
+        }
+        DO_OP_SET_PROPERTY_LONG: {
+            if (!IS_INSTANCE(peek(1))) {
+                runtimeError("Only instances can have properties");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+
+            ObjInstance* instance = AS_INSTANCE(peek(1));
+            ObjString* fieldName = READ_STRING_LONG();
+            Value constValue;
+
+            if (tableGet(&instance->klass->fields, fieldName, &constValue)) {
+                //  0 -> mutable
+                // -1 -> const but has to be initialized
+                // -2 -> const initialized
+                if (valuesEqual(constValue, NUMBER_VAL(-1))) {
+                    tableSet(&instance->klass->fields, fieldName, NUMBER_VAL(-2));
+                } else if (valuesEqual(constValue, NUMBER_VAL(-2))) {
+                    runtimeError("Can't modify const field '%s' of class '%s'", fieldName->chars, instance->klass->name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+            }
+
+            tableSet(&instance->fields, fieldName, peek(0));
+            markDirty((Obj*)instance);
+
+            // we remove the instance from the stack
+            // and leave only the property set value
+            Value value = pop();
+            pop();
+            push(value);
+            DISPATCH();
+        }
+        DO_OP_METHOD:
+            defineMethod(READ_STRING());
+            DISPATCH();
+        DO_OP_METHOD_LONG:
+            defineMethod(READ_STRING_LONG());
+            DISPATCH();
+        DO_OP_DEFINE_PROPERTY: {
+            ObjString* name = READ_STRING();
+            bool isConst = READ_BYTE();
+            defineProperty(name, isConst);
+            DISPATCH();
+        }
+        DO_OP_DEFINE_PROPERTY_LONG: {
+            ObjString* name = READ_STRING_LONG();
+            bool isConst = READ_BYTE();
+            defineProperty(name, isConst);
+            DISPATCH();
+        }
+        DO_OP_INVOKE: {
+            ObjString* method = READ_STRING();
+            int argc = READ_BYTE();
+            ObjClass* nativeClass = NULL;
+            if (isBuiltInAndSet(peek(argc), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                // debugMethodLookup(nativeClass, method);
+#endif
+                if (!invokeFromNative(nativeClass, method, argc)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+            } else {
+                if (!invoke(method, argc)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+            }
+
+            DISPATCH();
+        }
+        DO_OP_INVOKE_LONG: {
+            ObjString* method = READ_STRING_LONG();
+            int argc = READ_BYTE();
+            ObjClass* nativeClass = NULL;
+            if (isBuiltInAndSet(peek(argc), &nativeClass)) {
+#ifdef DEBUG_LOG_GC
+                // debugMethodLookup(nativeClass, method);
+#endif
+                if (!invokeFromNative(nativeClass, method, argc)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+            } else {
+                if (!invoke(method, argc)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frameArray.frames[vm.frameArray.count - 1];
+            }
+
+            DISPATCH();
+        }
+        DO_OP_INHERIT: {
+            ObjClass* derived = AS_CLASS(pop());
+            if (!IS_CLASS(peek(0))) {
+                runtimeError("Super must be a class");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            ObjClass* super = AS_CLASS(peek(0));
+            tableAddAll(&super->methods, &derived->methods);
+            markDirty((Obj*)derived);
+            DISPATCH();
+        }
+        DO_OP_GET_SUPER: {
+            ObjString* name = READ_STRING();
+            ObjClass* super = AS_CLASS(pop());
+
+            if (!bindMethod(super, name)) {
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            DISPATCH();
+        }
+        DO_OP_GET_SUPER_LONG: {
+            ObjString* name = READ_STRING_LONG();
+            ObjClass* super = AS_CLASS(pop());
+
+            if (!bindMethod(super, name)) {
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            DISPATCH();
+        }
+
     }
 
     #undef READ_BYTE
